@@ -1,0 +1,5 @@
+packages: erato.cabal
+package erato
+allow-newer:
+    gf:ghc-prim
+  , gf:template-haskell

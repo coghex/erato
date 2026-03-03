@@ -1,0 +1,42 @@
+cabal-version:      3.14
+name:               erato
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             coghex
+maintainer:         vincecoghlan@gmail.com
+-- copyright:
+category:           Language
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules: Engine.Core.Queue
+                   , Parser.AST
+                   , Parser.GFParser
+                   , Parser.Translate
+                   , Parser.Pretty
+    -- other-extensions:
+    build-depends:    base
+                    , stm
+                    , gf
+    hs-source-dirs:   src
+    default-language: GHC2024
+
+executable erato
+    import:           warnings
+    main-is:          Main.hs
+    build-depends: base
+                 , erato
+                 , stm
+                 , gf
+    hs-source-dirs:   app
+    default-language: GHC2024
