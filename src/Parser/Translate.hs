@@ -24,6 +24,8 @@ data SExp
   deriving (Eq, Show)
 
 parseSentence ∷ SExp → Maybe Sentence
+parseSentence (List [Atom "UttS", s]) =
+  parseSentence s
 parseSentence (List [Atom "MkS", t, p, cl]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p

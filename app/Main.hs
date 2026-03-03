@@ -45,10 +45,9 @@ inputLoop q = do
   line <- getLine
   case line of
     (':':'q':_) -> writeQueue q Quit
-    (':':'d':_) -> writeQueue q ShowAst
-    (':':'t':' ':rest) -> writeQueue q (TranslateSentence (stripQuotes rest))
-    _ -> putStrLn "Unknown command. Use :t <sentence>, :d, or :q"
-  inputLoop q
+    (':':'d':_) -> writeQueue q ShowAst >> inputLoop q
+    (':':'t':' ':rest) -> writeQueue q (TranslateSentence (stripQuotes rest)) >> inputLoop q
+    _ -> putStrLn "Unknown command. Use :t <sentence>, :d, or :q" >> inputLoop q
 
 processLoop ∷ GrammarBundle → IORef (Maybe Sentence) → Queue Command → IO ()
 processLoop grammars lastAstRef q = go
