@@ -12,9 +12,10 @@ import Parser.AST
 
 -- Public-API-only: parse from showExpr
 exprToSentence ∷ Expr → Maybe Sentence
-exprToSentence expr = do
-  sexp <- parseSExp (showExpr [] expr)
-  parseSentence sexp
+exprToSentence expr =
+  let raw = showExpr [] expr
+      sexp = parseSExp raw
+  in sexp >>= parseSentence
 
 -- S-expression model for parsing showExpr output
 data SExp
@@ -147,8 +148,21 @@ fantasyToken s =
 
 parseSExp ∷ String → Maybe SExp
 parseSExp input = do
-  (sexp, rest) <- parseOne (tokenize input)
-  if null rest then Just sexp else Nothing
+  (sexps, rest) <- parseMany (tokenize input)
+  if null rest
+    then case sexps of
+           [sexp] -> Just sexp
+           _      -> Just (List sexps)
+    else Nothing
+
+parseMany ∷ [Token] → Maybe ([SExp], [Token])
+parseMany = go []
+  where
+    go acc [] = Just (reverse acc, [])
+    go acc (TokRParen:_) = Nothing
+    go acc ts = do
+      (sexp, rest) <- parseOne ts
+      go (sexp:acc) rest
 
 parseOne ∷ [Token] → Maybe (SExp, [Token])
 parseOne [] = Nothing

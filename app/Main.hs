@@ -6,7 +6,7 @@ import Control.Concurrent (forkIO, threadDelay)
 import Data.IORef
 import System.IO (hFlush, stdout)
 
-import PGF (languages)
+import PGF (languages, showExpr)
 import Engine.Core.Queue
 import Parser.AST
 import Parser.GFParser
@@ -31,9 +31,6 @@ main = do
   grammars <- loadGrammars "Grammar/EratoAbs.pgf" "Grammar/AllEngAbs.pgf"
   q <- newQueue
   lastAstRef <- newIORef Nothing
-
-  putStrLn ("[debug] controlled languages: " <> show (languages (controlledPgf grammars)))
-  putStrLn ("[debug] fallback languages: " <> show (languages (fallbackPgf grammars)))
 
   _ <- forkIO (processLoop grammars lastAstRef q)
   inputLoop q
@@ -66,7 +63,7 @@ processLoop grammars lastAstRef q = go
         Just (TranslateSentence s) -> do
           let controlled = parseControlled grammars s
           case controlled of
-            (e:_) ->
+            (e:_) -> do
               case exprToSentence e of
                 Just ast -> do
                   writeIORef lastAstRef (Just ast)
