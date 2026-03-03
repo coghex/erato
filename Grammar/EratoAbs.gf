@@ -31,6 +31,8 @@ abstract EratoAbs = {
 
     the_Det  : Det ;
     a_Det    : Det ;
+    thePl_Det : Det ;
+    aPl_Det   : Det ;
     dog_N    : N ;
     man_N    : N ;
     food_N   : N ;

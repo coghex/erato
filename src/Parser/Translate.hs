@@ -88,9 +88,11 @@ parseVP (List [Atom "UseV2", v2, np]) = do
 parseVP _ = Nothing
 
 parseDet ∷ SExp → Maybe String
-parseDet (Atom "the_Det") = Just "the"
-parseDet (Atom "a_Det")   = Just "a"
-parseDet _                = Nothing
+parseDet (Atom "the_Det")   = Just "the"
+parseDet (Atom "a_Det")     = Just "a"
+parseDet (Atom "thePl_Det") = Just "the"
+parseDet (Atom "aPl_Det")   = Just "some"
+parseDet _                  = Nothing
 
 parseV ∷ SExp → Maybe String
 parseV (Atom "run_V") = Just "run"

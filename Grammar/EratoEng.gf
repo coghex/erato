@@ -48,6 +48,8 @@ concrete EratoEng of EratoAbs =
 
     the_Det = ConstructorsEng.the_Det ;
     a_Det   = ConstructorsEng.a_Det ;
+    thePl_Det = SyntaxEng.mkDet SyntaxEng.the_Quant SyntaxEng.plNum ;
+    aPl_Det   = SyntaxEng.mkDet SyntaxEng.a_Quant SyntaxEng.plNum ;
 
     dog_N  = lin CN {
       s = table {
@@ -76,8 +78,8 @@ concrete EratoEng of EratoAbs =
       lock_CN = {}
     } ;
 
-    eat_V2 = mkV2 "eat" ;
-    run_V  = mkV "run" ;
+    eat_V2 = dirV2 (irregV "eat" "ate" "eaten") ;
+    run_V  = irregDuplV "run" "ran" "run" ;
     red_A  = mkA "red" ;
 
     i_Pron    = StructuralEng.i_Pron ;
