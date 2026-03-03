@@ -1,5 +1,5 @@
 concrete EratoEng of EratoAbs =
-  open SyntaxEng, ParadigmsEng, GrammarEng, ResEng, ParamX, StructuralEng, ConstructorsEng in {
+  open SyntaxEng, ParadigmsEng, GrammarEng, ResEng, ParamX, StructuralEng, ConstructorsEng, ExtraEng in {
 
   lincat
     Utt   = SyntaxEng.Utt ;
@@ -38,6 +38,7 @@ concrete EratoEng of EratoAbs =
 
     PPos = GrammarEng.PPos ;
     PNeg = GrammarEng.PNeg ;
+    UncNeg = ExtraEng.UncNeg ;
 
     the_Det = ConstructorsEng.the_Det ;
     a_Det   = ConstructorsEng.a_Det ;

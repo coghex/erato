@@ -42,6 +42,7 @@ parseTense _              = Nothing
 parsePolarity ∷ SExp → Maybe Polarity
 parsePolarity (Atom "PPos") = Just Positive
 parsePolarity (Atom "PNeg") = Just Negative
+parsePolarity (Atom "UncNeg") = Just Negative
 parsePolarity _             = Nothing
 
 parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase)

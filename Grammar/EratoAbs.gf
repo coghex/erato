@@ -25,6 +25,7 @@ abstract EratoAbs = {
     TFut     : Tense ;
     PPos     : Pol ;
     PNeg     : Pol ;
+    UncNeg   : Pol ;
 
     the_Det  : Det ;
     a_Det    : Det ;

@@ -37,6 +37,36 @@ main = hspec $ do
         let exprs = parseControlled grammars "them eats the food"
         exprs `shouldBe` []
 
+    it "parses negation: the dog does not run" $ do
+      withGrammars $ \grammars -> do
+        let exprs = parseControlled grammars "the dog does not run"
+        exprs `shouldSatisfy` (not . null)
+        exprToSentence (head exprs)
+          `shouldBe`
+            Just (Sentence Present Negative
+                    (CommonNoun (Just "the") [] "dog")
+                    (Intransitive "run"))
+
+    it "parses negation: I do not run" $ do
+      withGrammars $ \grammars -> do
+        let exprs = parseControlled grammars "I do not run"
+        exprs `shouldSatisfy` (not . null)
+        exprToSentence (head exprs)
+          `shouldBe`
+            Just (Sentence Present Negative
+                    (Pronoun First Singular Subjective)
+                    (Intransitive "run"))
+
+    it "parses negation: the man does not eat the food" $ do
+      withGrammars $ \grammars -> do
+        let exprs = parseControlled grammars "the man does not eat the food"
+        exprs `shouldSatisfy` (not . null)
+        exprToSentence (head exprs)
+          `shouldBe`
+            Just (Sentence Present Negative
+                    (CommonNoun (Just "the") [] "man")
+                    (Transitive "eat" (CommonNoun (Just "the") [] "food")))
+
 withGrammars ∷ (GrammarBundle → IO ()) → IO ()
 withGrammars action = do
   hasControlled <- doesFileExist "Grammar/EratoAbs.pgf"
