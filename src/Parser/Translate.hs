@@ -54,9 +54,10 @@ parseCl _ = Nothing
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
 parseNP _ (List [Atom "DetCN", det, n]) = do
-  det' <- parseDet det
+  (detText, detNum) <- parseDetInfo det
   (num, adjs, noun) <- parseN n
-  pure (CommonNoun (Just det') adjs noun num)
+  let finalNum = maybe num id detNum
+  pure (CommonNoun (Just detText) adjs noun finalNum)
 parseNP _ (List [Atom "UseN", n]) = do
   (num, adjs, noun) <- parseN n
   pure (CommonNoun Nothing adjs noun num)
@@ -65,6 +66,13 @@ parseNP c (List [Atom "UsePron", pr]) = do
   (p, n) <- parsePron pr
   pure (Pronoun p n c)
 parseNP _ _ = Nothing
+
+parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
+parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
+parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
+parseDetInfo (Atom "thePl_Det") = Just ("the", Just Plural)
+parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
+parseDetInfo _                  = Nothing
 
 parseN ∷ SExp → Maybe (Number, [String], String)
 parseN (List [Atom "PlurN", n]) = do
