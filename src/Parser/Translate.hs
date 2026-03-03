@@ -6,6 +6,7 @@ module Parser.Translate
   , translateFallback
   ) where
 
+import Control.Monad (guard)
 import PGF (Expr, showExpr)
 import Data.Char (isAlpha, isSpace, toLower)
 import Parser.AST
@@ -49,8 +50,16 @@ parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase)
 parseCl (List [Atom "Pred", np, vp]) = do
   subj <- parseNP Subjective np
   vps  <- parseVP vp
+  guard (agreementOk subj vps)
   pure (subj, vps)
 parseCl _ = Nothing
+
+agreementOk ∷ NounPhrase → VerbPhrase → Bool
+agreementOk (CommonNoun _ _ _ Plural) (Intransitive "runs") = False
+agreementOk (CommonNoun _ _ _ Singular) (Intransitive "run") = False
+agreementOk (Pronoun _ Plural _) (Intransitive "runs") = False
+agreementOk (Pronoun _ Singular _) (Intransitive "run") = False
+agreementOk _ _ = True
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
 parseNP _ (List [Atom "DetCN", det, n]) = do
@@ -75,16 +84,16 @@ parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
 parseDetInfo _                  = Nothing
 
 parseN ∷ SExp → Maybe (Number, [String], String)
-parseN (List [Atom "PlurN", n]) = do
-  (_, adjs, noun) <- parseN n
-  pure (Plural, adjs, noun)
 parseN (List [Atom "AdjCN", a, n]) = do
   adj <- parseA a
   (num, adjs, noun) <- parseN n
   pure (num, adj : adjs, noun)
-parseN (Atom "dog_N")  = Just (Singular, [], "dog")
-parseN (Atom "man_N")  = Just (Singular, [], "man")
-parseN (Atom "food_N") = Just (Singular, [], "food")
+parseN (Atom "dog_N")   = Just (Singular, [], "dog")
+parseN (Atom "dogPl_N") = Just (Plural, [], "dog")
+parseN (Atom "man_N")   = Just (Singular, [], "man")
+parseN (Atom "manPl_N") = Just (Plural, [], "man")
+parseN (Atom "food_N")  = Just (Singular, [], "food")
+parseN (Atom "foodPl_N")= Just (Plural, [], "food")
 parseN _               = Nothing
 
 parseVP ∷ SExp → Maybe VerbPhrase
@@ -104,6 +113,7 @@ parseDet _                  = Nothing
 
 parseV ∷ SExp → Maybe String
 parseV (Atom "run_V") = Just "run"
+parseV (Atom "runS_V") = Just "runs"
 parseV _              = Nothing
 
 parseV2 ∷ SExp → Maybe String

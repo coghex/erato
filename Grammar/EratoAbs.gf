@@ -20,8 +20,6 @@ abstract EratoAbs = {
     UsePN    : PN -> NP ;
     UsePron  : Pron -> NP ;
 
-    PlurN    : N -> N ;
-
     TPres    : Tense ;
     TPast    : Tense ;
     TFut     : Tense ;
@@ -34,10 +32,14 @@ abstract EratoAbs = {
     thePl_Det : Det ;
     aPl_Det   : Det ;
     dog_N    : N ;
+    dogPl_N  : N ;
     man_N    : N ;
+    manPl_N  : N ;
     food_N   : N ;
+    foodPl_N : N ;
     eat_V2   : V2 ;
     run_V    : V ;
+    runS_V   : V ;
     red_A    : A ;
 
     i_Pron    : Pron ;

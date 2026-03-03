@@ -43,7 +43,16 @@ concrete EratoEng of EratoAbs =
       g = ResEng.Neutr ;
       lock_CN = {}
     } ;
-  
+
+    dogPl_N = lin CN {
+      s = table {
+        ParamX.Sg => table {ResEng.Nom => "dogs" ; ResEng.Gen => "dogs"} ;
+        ParamX.Pl => table {ResEng.Nom => "dogs" ; ResEng.Gen => "dogs"}
+      } ;
+      g = ResEng.Neutr ;
+      lock_CN = {}
+    } ;
+
     man_N  = lin CN {
       s = table {
         ParamX.Sg => table {ResEng.Nom => "man" ; ResEng.Gen => "man"} ;
@@ -52,7 +61,16 @@ concrete EratoEng of EratoAbs =
       g = ResEng.Masc ;
       lock_CN = {}
     } ;
-  
+
+    manPl_N = lin CN {
+      s = table {
+        ParamX.Sg => table {ResEng.Nom => "men" ; ResEng.Gen => "men"} ;
+        ParamX.Pl => table {ResEng.Nom => "men" ; ResEng.Gen => "men"}
+      } ;
+      g = ResEng.Masc ;
+      lock_CN = {}
+    } ;
+
     food_N = lin CN {
       s = table {
         ParamX.Sg => table {ResEng.Nom => "food" ; ResEng.Gen => "food"} ;
@@ -61,6 +79,16 @@ concrete EratoEng of EratoAbs =
       g = ResEng.Neutr ;
       lock_CN = {}
     } ;
+
+    foodPl_N = lin CN {
+      s = table {
+        ParamX.Sg => table {ResEng.Nom => "foods" ; ResEng.Gen => "foods"} ;
+        ParamX.Pl => table {ResEng.Nom => "foods" ; ResEng.Gen => "foods"}
+      } ;
+      g = ResEng.Neutr ;
+      lock_CN = {}
+    } ;
+
     UttS s = mkUtt s ;
 
     Pred np vp = mkCl np vp ;
@@ -88,7 +116,8 @@ concrete EratoEng of EratoAbs =
     aPl_Det   = SyntaxEng.mkDet SyntaxEng.a_Quant SyntaxEng.plNum ;
 
     eat_V2 = dirV2 (irregV "eat" "ate" "eaten") ;
-    run_V  = irregDuplV "run" "ran" "run" ;
+    run_V  = mkV "run" ;
+    runS_V  = mkV "runs" ;
     red_A  = mkA "red" ;
 
     i_Pron    = StructuralEng.i_Pron ;
