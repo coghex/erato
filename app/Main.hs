@@ -63,13 +63,17 @@ processLoop grammars lastAstRef q = go
         Just (TranslateSentence s) -> do
           let controlled = parseControlled grammars s
           case controlled of
-            (e:_) -> do
+            (e:_) ->
               case exprToSentence e of
                 Just ast -> do
                   writeIORef lastAstRef (Just ast)
                   putStrLn ("[ok] " <> translateSentence ast)
-                Nothing  -> fallback s
-            [] -> fallback s
+                Nothing  -> do
+                  putStrLn "[warn] controlled parse succeeded but AST conversion failed — using fallback"
+                  fallback s
+            [] -> do
+              putStrLn "[warn] controlled parse failed (0 parses) — using fallback"
+              fallback s
           go
 
     fallback s = do

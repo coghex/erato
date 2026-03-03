@@ -40,3 +40,14 @@ executable erato
                  , gf
     hs-source-dirs:   app
     default-language: GHC2024
+
+test-suite erato-tests
+    import:           warnings
+    type:             exitcode-stdio-1.0
+    main-is:          Main.hs
+    hs-source-dirs:   test
+    build-depends:    base
+                    , directory
+                    , erato
+                    , hspec
+    default-language: GHC2024
