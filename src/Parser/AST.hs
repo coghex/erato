@@ -37,6 +37,7 @@ data NounPhrase
       { det   ∷ Maybe String
       , adjs  ∷ [String]
       , noun  ∷ String
+      , number ∷ Number
       }
   deriving (Eq, Show)
 

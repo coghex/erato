@@ -29,7 +29,7 @@ main = hspec $ do
         exprToSentence (head exprs)
           `shouldBe`
             Just (Sentence Present Positive
-                    (CommonNoun (Just "the") [] "man")
+                    (CommonNoun (Just "the") [] "man" Singular)
                     (Transitive "eat" (Pronoun Third Singular Objective)))
 
     it "rejects object case as subject: them eats the food" $ do
@@ -44,7 +44,7 @@ main = hspec $ do
         exprToSentence (head exprs)
           `shouldBe`
             Just (Sentence Present Negative
-                    (CommonNoun (Just "the") [] "dog")
+                    (CommonNoun (Just "the") [] "dog" Singular)
                     (Intransitive "run"))
 
     it "parses negation: I do not run" $ do
@@ -64,8 +64,23 @@ main = hspec $ do
         exprToSentence (head exprs)
           `shouldBe`
             Just (Sentence Present Negative
-                    (CommonNoun (Just "the") [] "man")
-                    (Transitive "eat" (CommonNoun (Just "the") [] "food")))
+                    (CommonNoun (Just "the") [] "man" Singular)
+                    (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular)))
+
+    it "parses plural agreement: the dogs run" $ do
+      withGrammars $ \grammars -> do
+        let exprs = parseControlled grammars "the dogs run"
+        exprs `shouldSatisfy` (not . null)
+        exprToSentence (head exprs)
+          `shouldBe`
+            Just (Sentence Present Positive
+                    (CommonNoun (Just "the") [] "dog" Plural)
+                    (Intransitive "run"))
+
+    it "rejects agreement mismatch: the dogs runs" $ do
+      withGrammars $ \grammars -> do
+        let exprs = parseControlled grammars "the dogs runs"
+        exprs `shouldBe` []
 
 withGrammars ∷ (GrammarBundle → IO ()) → IO ()
 withGrammars action = do

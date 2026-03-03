@@ -32,6 +32,12 @@ concrete EratoEng of EratoAbs =
     UsePN pn = SyntaxEng.mkNP pn ;
     UsePron p = SyntaxEng.mkNP p ;
 
+    PlurN n = lin CN {
+      s = \\_ => n.s ! ParamX.Pl ;
+      g = n.g ;
+      lock_CN = {}
+    } ;
+
     TPres = GrammarEng.TPres ;
     TPast = GrammarEng.TPast ;
     TFut  = GrammarEng.TFut ;
@@ -46,7 +52,7 @@ concrete EratoEng of EratoAbs =
     dog_N  = lin CN {
       s = table {
         ParamX.Sg => table {ResEng.Nom => "dog" ; ResEng.Gen => "dog"} ;
-        ParamX.Pl => table {ResEng.Nom => "dog" ; ResEng.Gen => "dog"}
+        ParamX.Pl => table {ResEng.Nom => "dogs" ; ResEng.Gen => "dogs"}
       } ;
       g = ResEng.Neutr ;
       lock_CN = {}
@@ -55,7 +61,7 @@ concrete EratoEng of EratoAbs =
     man_N  = lin CN {
       s = table {
         ParamX.Sg => table {ResEng.Nom => "man" ; ResEng.Gen => "man"} ;
-        ParamX.Pl => table {ResEng.Nom => "man" ; ResEng.Gen => "man"}
+        ParamX.Pl => table {ResEng.Nom => "men" ; ResEng.Gen => "men"}
       } ;
       g = ResEng.Masc ;
       lock_CN = {}
@@ -64,7 +70,7 @@ concrete EratoEng of EratoAbs =
     food_N = lin CN {
       s = table {
         ParamX.Sg => table {ResEng.Nom => "food" ; ResEng.Gen => "food"} ;
-        ParamX.Pl => table {ResEng.Nom => "food" ; ResEng.Gen => "food"}
+        ParamX.Pl => table {ResEng.Nom => "foods" ; ResEng.Gen => "foods"}
       } ;
       g = ResEng.Neutr ;
       lock_CN = {}

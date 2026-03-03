@@ -33,11 +33,12 @@ renderNP indent np =
         , indent <> "|- number: " <> show n
         , indent <> "\\- case: " <> show c
         ]
-    CommonNoun det adjs noun ->
+    CommonNoun det adjs noun num ->
       unlines
         [ indent <> "|- CommonNoun"
         , indent <> "|- det: " <> show det
         , indent <> "|- adjs: " <> show adjs
+        , indent <> "|- number: " <> show num
         , indent <> "\\- noun: " <> noun
         ]
 

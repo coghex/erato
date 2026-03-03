@@ -20,6 +20,8 @@ abstract EratoAbs = {
     UsePN    : PN -> NP ;
     UsePron  : Pron -> NP ;
 
+    PlurN    : N -> N ;
+
     TPres    : Tense ;
     TPast    : Tense ;
     TFut     : Tense ;

@@ -55,16 +55,29 @@ parseCl _ = Nothing
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
 parseNP _ (List [Atom "DetCN", det, n]) = do
   det' <- parseDet det
-  (adjs, noun) <- parseN n
-  pure (CommonNoun (Just det') adjs noun)
+  (num, adjs, noun) <- parseN n
+  pure (CommonNoun (Just det') adjs noun num)
 parseNP _ (List [Atom "UseN", n]) = do
-  (adjs, noun) <- parseN n
-  pure (CommonNoun Nothing adjs noun)
+  (num, adjs, noun) <- parseN n
+  pure (CommonNoun Nothing adjs noun num)
 parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
 parseNP c (List [Atom "UsePron", pr]) = do
   (p, n) <- parsePron pr
   pure (Pronoun p n c)
 parseNP _ _ = Nothing
+
+parseN ∷ SExp → Maybe (Number, [String], String)
+parseN (List [Atom "PlurN", n]) = do
+  (_, adjs, noun) <- parseN n
+  pure (Plural, adjs, noun)
+parseN (List [Atom "AdjCN", a, n]) = do
+  adj <- parseA a
+  (num, adjs, noun) <- parseN n
+  pure (num, adj : adjs, noun)
+parseN (Atom "dog_N")  = Just (Singular, [], "dog")
+parseN (Atom "man_N")  = Just (Singular, [], "man")
+parseN (Atom "food_N") = Just (Singular, [], "food")
+parseN _               = Nothing
 
 parseVP ∷ SExp → Maybe VerbPhrase
 parseVP (List [Atom "UseV", v]) = Intransitive <$> parseV v
@@ -78,16 +91,6 @@ parseDet ∷ SExp → Maybe String
 parseDet (Atom "the_Det") = Just "the"
 parseDet (Atom "a_Det")   = Just "a"
 parseDet _                = Nothing
-
-parseN ∷ SExp → Maybe ([String], String)
-parseN (List [Atom "AdjCN", a, n]) = do
-  adj <- parseA a
-  (adjs, noun) <- parseN n
-  pure (adj : adjs, noun)
-parseN (Atom "dog_N")  = Just ([], "dog")
-parseN (Atom "man_N")  = Just ([], "man")
-parseN (Atom "food_N") = Just ([], "food")
-parseN _               = Nothing
 
 parseV ∷ SExp → Maybe String
 parseV (Atom "run_V") = Just "run"
@@ -141,7 +144,7 @@ renderPolarity Negative = "no"
 renderNP ∷ NounPhrase → String
 renderNP (ProperNoun s) = fantasyToken s
 renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
-renderNP (CommonNoun det adjs noun) =
+renderNP (CommonNoun det adjs noun _) =
   unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
 
 renderVP ∷ VerbPhrase → String
