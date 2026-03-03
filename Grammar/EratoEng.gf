@@ -1,5 +1,5 @@
 concrete EratoEng of EratoAbs =
-  open SyntaxEng, ParadigmsEng, GrammarEng, ResEng, ParamX in {
+  open SyntaxEng, ParadigmsEng, GrammarEng, ResEng, ParamX, StructuralEng, ConstructorsEng in {
 
   lincat
     Utt   = SyntaxEng.Utt ;
@@ -13,6 +13,7 @@ concrete EratoEng of EratoAbs =
     A     = SyntaxEng.A ;
     Det   = SyntaxEng.Det ;
     PN    = SyntaxEng.PN ;
+    Pron  = SyntaxEng.Pron ;
     Tense = GrammarEng.Tense ;
     Pol   = GrammarEng.Pol ;
     Name  = Str ;
@@ -29,6 +30,7 @@ concrete EratoEng of EratoAbs =
     AdjCN a n = SyntaxEng.mkCN a n ;
     UseN n = SyntaxEng.mkNP n ;
     UsePN pn = SyntaxEng.mkNP pn ;
+    UsePron p = SyntaxEng.mkNP p ;
 
     TPres = GrammarEng.TPres ;
     TPast = GrammarEng.TPast ;
@@ -37,8 +39,8 @@ concrete EratoEng of EratoAbs =
     PPos = GrammarEng.PPos ;
     PNeg = GrammarEng.PNeg ;
 
-    the_Det = the_Det ;
-    a_Det   = a_Det ;
+    the_Det = ConstructorsEng.the_Det ;
+    a_Det   = ConstructorsEng.a_Det ;
 
     dog_N  = lin CN {
       s = table {
@@ -70,6 +72,15 @@ concrete EratoEng of EratoAbs =
     eat_V2 = mkV2 "eat" ;
     run_V  = mkV "run" ;
     red_A  = mkA "red" ;
+
+    i_Pron    = StructuralEng.i_Pron ;
+    we_Pron   = StructuralEng.we_Pron ;
+    you_Pron  = StructuralEng.youSg_Pron ;
+    youPl_Pron = StructuralEng.youPl_Pron ;
+    he_Pron   = StructuralEng.he_Pron ;
+    she_Pron  = StructuralEng.she_Pron ;
+    it_Pron   = StructuralEng.it_Pron ;
+    they_Pron = StructuralEng.they_Pron ;
 
     MkPN n = lin PN {
       s = table {ResEng.Nom => n ; ResEng.Gen => n} ;

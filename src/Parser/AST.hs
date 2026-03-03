@@ -3,6 +3,9 @@
 module Parser.AST
   ( Tense(..)
   , Polarity(..)
+  , Person(..)
+  , Number(..)
+  , PronounCase(..)
   , NounPhrase(..)
   , VerbPhrase(..)
   , Sentence(..)
@@ -14,8 +17,22 @@ data Tense = Present | Past | Future
 data Polarity = Positive | Negative
   deriving (Eq, Show)
 
+data Person = First | Second | Third
+  deriving (Eq, Show)
+
+data Number = Singular | Plural
+  deriving (Eq, Show)
+
+data PronounCase = Subjective | Objective
+  deriving (Eq, Show)
+
 data NounPhrase
   = ProperNoun String
+  | Pronoun
+      { person      ∷ Person
+      , number      ∷ Number
+      , pronounCase ∷ PronounCase
+      }
   | CommonNoun
       { det   ∷ Maybe String
       , adjs  ∷ [String]

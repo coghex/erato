@@ -12,10 +12,9 @@ import Parser.AST
 
 -- Public-API-only: parse from showExpr
 exprToSentence ∷ Expr → Maybe Sentence
-exprToSentence expr =
-  let raw = showExpr [] expr
-      sexp = parseSExp raw
-  in sexp >>= parseSentence
+exprToSentence expr = do
+  sexp <- parseSExp (showExpr [] expr)
+  parseSentence sexp
 
 -- S-expression model for parsing showExpr output
 data SExp
@@ -47,27 +46,30 @@ parsePolarity _             = Nothing
 
 parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase)
 parseCl (List [Atom "Pred", np, vp]) = do
-  subj <- parseNP np
+  subj <- parseNP Subjective np
   vps  <- parseVP vp
   pure (subj, vps)
 parseCl _ = Nothing
 
-parseNP ∷ SExp → Maybe NounPhrase
-parseNP (List [Atom "DetCN", det, n]) = do
+parseNP ∷ PronounCase → SExp → Maybe NounPhrase
+parseNP _ (List [Atom "DetCN", det, n]) = do
   det' <- parseDet det
   (adjs, noun) <- parseN n
   pure (CommonNoun (Just det') adjs noun)
-parseNP (List [Atom "UseN", n]) = do
+parseNP _ (List [Atom "UseN", n]) = do
   (adjs, noun) <- parseN n
   pure (CommonNoun Nothing adjs noun)
-parseNP (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
-parseNP _ = Nothing
+parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
+parseNP c (List [Atom "UsePron", pr]) = do
+  (p, n) <- parsePron pr
+  pure (Pronoun p n c)
+parseNP _ _ = Nothing
 
 parseVP ∷ SExp → Maybe VerbPhrase
 parseVP (List [Atom "UseV", v]) = Intransitive <$> parseV v
 parseVP (List [Atom "UseV2", v2, np]) = do
   v <- parseV2 v2
-  obj <- parseNP np
+  obj <- parseNP Objective np
   pure (Transitive v obj)
 parseVP _ = Nothing
 
@@ -103,6 +105,16 @@ parsePN (List [Atom "MkPN", StrLit s]) = Just s
 parsePN (StrLit s) = Just s
 parsePN _ = Nothing
 
+parsePron ∷ SExp → Maybe (Person, Number)
+parsePron (Atom "i_Pron")    = Just (First, Singular)
+parsePron (Atom "we_Pron")   = Just (First, Plural)
+parsePron (Atom "you_Pron")  = Just (Second, Singular)
+parsePron (Atom "he_Pron")   = Just (Third, Singular)
+parsePron (Atom "she_Pron")  = Just (Third, Singular)
+parsePron (Atom "it_Pron")   = Just (Third, Singular)
+parsePron (Atom "they_Pron") = Just (Third, Plural)
+parsePron _ = Nothing
+
 translateSentence ∷ Sentence → String
 translateSentence s =
   unwords
@@ -127,6 +139,7 @@ renderPolarity Negative = "no"
 
 renderNP ∷ NounPhrase → String
 renderNP (ProperNoun s) = fantasyToken s
+renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
 renderNP (CommonNoun det adjs noun) =
   unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
 
@@ -135,6 +148,17 @@ renderVP (Intransitive v) =
   fantasyToken v
 renderVP (Transitive v obj) =
   unwords [fantasyToken v, renderNP obj]
+
+renderPronoun ∷ Person → Number → PronounCase → String
+renderPronoun First Singular Subjective = "i"
+renderPronoun First Singular Objective  = "me"
+renderPronoun First Plural   Subjective = "we"
+renderPronoun First Plural   Objective  = "us"
+renderPronoun Second _       _          = "you"
+renderPronoun Third Singular Subjective = "he"
+renderPronoun Third Singular Objective  = "him"
+renderPronoun Third Plural   Subjective = "they"
+renderPronoun Third Plural   Objective  = "them"
 
 fantasyToken ∷ String → String
 fantasyToken s =

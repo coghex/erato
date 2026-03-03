@@ -26,6 +26,13 @@ renderNP indent np =
         [ indent <> "|- ProperNoun"
         , indent <> "\\- " <> name
         ]
+    Pronoun p n c ->
+      unlines
+        [ indent <> "|- Pronoun"
+        , indent <> "|- person: " <> show p
+        , indent <> "|- number: " <> show n
+        , indent <> "\\- case: " <> show c
+        ]
     CommonNoun det adjs noun ->
       unlines
         [ indent <> "|- CommonNoun"
