@@ -115,11 +115,6 @@ parseRelClause (List [Atom "RelV2", rp, np, v2]) = do
   pure (RelV2 lemma subj)
 parseRelClause _ = Nothing
 
-parseRP ∷ SExp → Maybe ()
-parseRP (Atom "who_RP")  = Just ()
-parseRP (Atom "that_RP") = Just ()
-parseRP _ = Nothing
-
 parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
 parseVP (List [Atom "AdvVP", vp, adv]) = do
   (baseVP, vf) <- parseVP vp
@@ -145,6 +140,11 @@ parsePrep ∷ SExp → Maybe String
 parsePrep (Atom a)
   | Just base <- stripSuffix "_Prep" a = Just base
 parsePrep _ = Nothing
+
+parseRP ∷ SExp → Maybe ()
+parseRP (Atom "who_RP")  = Just ()
+parseRP (Atom "that_RP") = Just ()
+parseRP _ = Nothing
 
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
