@@ -6,7 +6,6 @@ module Parser.Translate
   , translateFallback
   ) where
 
-import Control.Monad (guard)
 import PGF (Expr, showExpr)
 import Data.Char (isAlpha, isSpace, toLower)
 import Parser.AST
@@ -24,6 +23,21 @@ data SExp
   | List [SExp]
   deriving (Eq, Show)
 
+data VerbForm = BaseForm | ThirdSingular
+  deriving (Eq, Show)
+
+parseSentence ∷ SExp → Maybe Sentence
+parseSentence (List [Atom "UttS", s]) =
+  parseSentence s
+parseSentence (List [Atom "MkS", t, p, cl]) = do
+  tense'    <- parseTense t
+  polarity' <- parsePolarity p
+  (subj, vp, vform) <- parseCl cl
+  if agreementOk tense' polarity' subj vform
+    then pure (Sentence tense' polarity' subj vp)
+    else Nothing
+parseSentence _ = Nothing
+
 parseTense ∷ SExp → Maybe Tense
 parseTense (Atom "TPres") = Just Present
 parseTense (Atom "TPast") = Just Past
@@ -36,23 +50,11 @@ parsePolarity (Atom "PNeg") = Just Negative
 parsePolarity (Atom "UncNeg") = Just Negative
 parsePolarity _             = Nothing
 
-parseSentence ∷ SExp → Maybe Sentence
-parseSentence (List [Atom "UttS", s]) =
-  parseSentence s
-parseSentence (List [Atom "MkS", t, p, cl]) = do
-  tense'    <- parseTense t
-  polarity' <- parsePolarity p
-  (subj, vp) <- parseCl cl
-  if agreementOk tense' polarity' subj vp
-    then pure (Sentence tense' polarity' subj vp)
-    else Nothing
-parseSentence _ = Nothing
-
-parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase)
+parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase, VerbForm)
 parseCl (List [Atom "Pred", np, vp]) = do
   subj <- parseNP Subjective np
-  vps  <- parseVP vp
-  pure (subj, vps)
+  (vps, vf) <- parseVP vp
+  pure (subj, vps, vf)
 parseCl _ = Nothing
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
@@ -71,6 +73,26 @@ parseNP c (List [Atom "UsePron", pr]) = do
   pure (Pronoun p n c)
 parseNP _ _ = Nothing
 
+parseN ∷ SExp → Maybe (Number, [String], String)
+parseN (List [Atom "AdjCN", a, n]) = do
+  adj <- parseA a
+  (num, adjs, noun) <- parseN n
+  pure (num, adj : adjs, noun)
+parseN (Atom a)
+  | Just base <- stripSuffix "Pl_N" a = Just (Plural, [], base)
+  | Just base <- stripSuffix "_N" a   = Just (Singular, [], base)
+parseN _ = Nothing
+
+parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
+parseVP (List [Atom "UseV", v]) = do
+  (lemma, vf) <- parseV v
+  pure (Intransitive lemma, vf)
+parseVP (List [Atom "UseV2", v2, np]) = do
+  (lemma, vf) <- parseV2 v2
+  obj <- parseNP Objective np
+  pure (Transitive lemma obj, vf)
+parseVP _ = Nothing
+
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
 parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
@@ -78,62 +100,22 @@ parseDetInfo (Atom "thePl_Det") = Just ("the", Just Plural)
 parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
 parseDetInfo _                  = Nothing
 
-agreementOk ∷ Tense → Polarity → NounPhrase → VerbPhrase → Bool
-agreementOk Present Positive subj (Intransitive v) =
-  case v of
-    "runs" -> isThirdSingular subj
-    "run"  -> not (isThirdSingular subj)
-    _      -> True
-agreementOk Present Negative _ (Intransitive v) =
-  v /= "runs"
-agreementOk _ _ _ _ = True
+parseV ∷ SExp → Maybe (String, VerbForm)
+parseV (Atom a)
+  | Just base <- stripSuffix "S_V" a  = Just (base, ThirdSingular)
+  | Just base <- stripSuffix "_V" a   = Just (base, BaseForm)
+parseV _ = Nothing
 
-isThirdSingular ∷ NounPhrase → Bool
-isThirdSingular (ProperNoun _) = True
-isThirdSingular (CommonNoun _ _ _ Singular) = True
-isThirdSingular (Pronoun Third Singular _) = True
-isThirdSingular _ = False
-
-parseV ∷ SExp → Maybe String
-parseV (Atom "run_V")  = Just "run"
-parseV (Atom "runS_V") = Just "runs"
-parseV _               = Nothing
-
-parseN ∷ SExp → Maybe (Number, [String], String)
-parseN (List [Atom "AdjCN", a, n]) = do
-  adj <- parseA a
-  (num, adjs, noun) <- parseN n
-  pure (num, adj : adjs, noun)
-parseN (Atom "dog_N")   = Just (Singular, [], "dog")
-parseN (Atom "dogPl_N") = Just (Plural, [], "dog")
-parseN (Atom "man_N")   = Just (Singular, [], "man")
-parseN (Atom "manPl_N") = Just (Plural, [], "man")
-parseN (Atom "food_N")  = Just (Singular, [], "food")
-parseN (Atom "foodPl_N")= Just (Plural, [], "food")
-parseN _               = Nothing
-
-parseVP ∷ SExp → Maybe VerbPhrase
-parseVP (List [Atom "UseV", v]) = Intransitive <$> parseV v
-parseVP (List [Atom "UseV2", v2, np]) = do
-  v <- parseV2 v2
-  obj <- parseNP Objective np
-  pure (Transitive v obj)
-parseVP _ = Nothing
-
-parseDet ∷ SExp → Maybe String
-parseDet (Atom "the_Det")   = Just "the"
-parseDet (Atom "a_Det")     = Just "a"
-parseDet (Atom "thePl_Det") = Just "the"
-parseDet (Atom "aPl_Det")   = Just "some"
-parseDet _                  = Nothing
-
-parseV2 ∷ SExp → Maybe String
-parseV2 (Atom "eat_V2") = Just "eat"
-parseV2 _               = Nothing
+parseV2 ∷ SExp → Maybe (String, VerbForm)
+parseV2 (Atom a)
+  | Just base <- stripSuffix "S_V2" a = Just (base, ThirdSingular)
+  | Just base <- stripSuffix "_V2" a  = Just (base, BaseForm)
+parseV2 _ = Nothing
 
 parseA ∷ SExp → Maybe String
-parseA (Atom "red_A") = Just "red"
-parseA _              = Nothing
+parseA (Atom a)
+  | Just base <- stripSuffix "_A" a = Just base
+parseA _ = Nothing
 
 parsePN ∷ SExp → Maybe String
 parsePN (List [Atom "MkPN", StrLit s]) = Just s
@@ -149,6 +131,29 @@ parsePron (Atom "she_Pron")  = Just (Third, Singular)
 parsePron (Atom "it_Pron")   = Just (Third, Singular)
 parsePron (Atom "they_Pron") = Just (Third, Plural)
 parsePron _ = Nothing
+
+stripSuffix ∷ String → String → Maybe String
+stripSuffix suffix s =
+  let n = length s - length suffix
+  in if n > 0 && drop n s == suffix
+       then Just (take n s)
+       else Nothing
+
+agreementOk ∷ Tense → Polarity → NounPhrase → VerbForm → Bool
+agreementOk Present Positive subj vform =
+  case (isThirdSingular subj, vform) of
+    (True, ThirdSingular) -> True
+    (False, BaseForm)     -> True
+    _                     -> False
+agreementOk Present Negative _ vform =
+  vform == BaseForm
+agreementOk _ _ _ _ = True
+
+isThirdSingular ∷ NounPhrase → Bool
+isThirdSingular (ProperNoun _) = True
+isThirdSingular (CommonNoun _ _ _ Singular) = True
+isThirdSingular (Pronoun Third Singular _) = True
+isThirdSingular _ = False
 
 translateSentence ∷ Sentence → String
 translateSentence s =
