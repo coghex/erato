@@ -8,7 +8,7 @@ module Parser.GFParser
   ) where
 
 import PGF
-import Parser.Translate (exprToSentence)
+import Parser.Translate (exprToSentence, exprProperNouns)
 import Data.Char (isAlpha, toLower)
 
 data GrammarBundle = GrammarBundle
@@ -24,17 +24,24 @@ loadGrammars controlledPath fallbackPath = do
 
 parseControlled ∷ GrammarBundle → String → [Expr]
 parseControlled bundle input =
-  let pgf  = controlledPgf bundle
-      lang = mkCId "EratoEng"
-      typ  = startCat pgf
+  let pgf    = controlledPgf bundle
+      lang   = mkCId "EratoEng"
+      typ    = startCat pgf
+      morpho = buildMorpho pgf lang
       parses = parse pgf lang typ input
-      filtered = filter (maybe False (const True) . exprToSentence) parses
-  in if not (null filtered)
-       then filtered
-       else
-         let inputs = quoteFallbacks input
-             parses' = concatMap (parse pgf lang typ) inputs
-         in filter (maybe False (const True) . exprToSentence) parses'
+      -- Accept a parse only if:
+      --   1. exprToSentence succeeds (well-formed AST)
+      --   2. Every SymbPN "x" in the tree is for a word unknown to the morpho
+      filtered = filter (validParse morpho) parses
+  in filtered
+
+validParse ∷ Morpho → Expr → Bool
+validParse morpho expr =
+  case exprToSentence expr of
+    Nothing -> False
+    Just _  ->
+      let pns = exprProperNouns expr
+      in all (\w -> null (lookupMorpho morpho w)) pns
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
@@ -42,39 +49,3 @@ parseFallbackAllEng bundle input =
       lang = mkCId "AllEng"
       typ  = startCat pgf
   in parse pgf lang typ input
-
-quoteFallbacks ∷ String → [String]
-quoteFallbacks input =
-  let toks = words input
-      idxs = [0 .. length toks - 1]
-      quoteable = [ i | i <- idxs, not (isFunctionWord (toks !! i)) ]
-  in if null quoteable
-       then []
-       else
-         [ renderQuoted toks subset
-         | k <- [1 .. length quoteable]
-         , subset <- combinations k quoteable
-         ]
-
-renderQuoted ∷ [String] → [Int] → String
-renderQuoted toks subset =
-  unwords [ if i `elem` subset then quote tok else tok
-          | (i, tok) <- zip [0..] toks
-          ]
-
-quote ∷ String → String
-quote tok = "\"" <> tok <> "\""
-
-isFunctionWord ∷ String → Bool
-isFunctionWord tok =
-  let t = map toLower (filter isAlpha tok)
-  in t `elem`
-     [ "the","a","some","does","do","not"
-     , "i","me","you","he","him","she","her","it","we","us","they","them"
-     ]
-
-combinations ∷ Int → [a] → [[a]]
-combinations 0 _      = [[]]
-combinations _ []     = []
-combinations k (x:xs) =
-  map (x:) (combinations (k-1) xs) ++ combinations k xs

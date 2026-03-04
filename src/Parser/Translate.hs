@@ -2,6 +2,7 @@
 
 module Parser.Translate
   ( exprToSentence
+  , exprProperNouns
   , translateSentence
   , translateFallback
   ) where
@@ -15,6 +16,17 @@ exprToSentence ∷ Expr → Maybe Sentence
 exprToSentence expr = do
   sexp <- parseSExp (showExpr [] expr)
   parseSentence sexp
+
+exprProperNouns ∷ Expr → [String]
+exprProperNouns expr =
+  case parseSExp (showExpr [] expr) of
+    Nothing   -> []
+    Just sexp -> collectSymbPN sexp
+
+collectSymbPN ∷ SExp → [String]
+collectSymbPN (List [Atom "SymbPN", StrLit s]) = [s]
+collectSymbPN (List xs) = concatMap collectSymbPN xs
+collectSymbPN _ = []
 
 -- S-expression model for parsing showExpr output
 data SExp
@@ -119,6 +131,7 @@ parseA _ = Nothing
 
 parsePN ∷ SExp → Maybe String
 parsePN (List [Atom "MkPN", pn]) = parsePN pn
+parsePN (List [Atom "SymbPN", StrLit s]) = Just s
 parsePN (List [Atom "MkName", StrLit s]) = Just s
 parsePN (StrLit s) = Just s
 parsePN _ = Nothing
