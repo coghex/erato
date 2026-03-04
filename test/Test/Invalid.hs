@@ -19,7 +19,7 @@ spec = describe "Invalid sentences" $ do
       let exprs = parseControlled grammars "the dogs runs"
       shouldReject exprs
 
-  it "rejects unknown word: the blorf runs" $ do
+  it "rejects missing verb: the dog the food" $ do
     withGrammars $ \grammars -> do
-      let exprs = parseControlled grammars "the blorf runs"
+      let exprs = parseControlled grammars "the dog the food"
       shouldReject exprs

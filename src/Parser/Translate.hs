@@ -118,7 +118,8 @@ parseA (Atom a)
 parseA _ = Nothing
 
 parsePN ∷ SExp → Maybe String
-parsePN (List [Atom "MkPN", StrLit s]) = Just s
+parsePN (List [Atom "MkPN", pn]) = parsePN pn
+parsePN (List [Atom "MkName", StrLit s]) = Just s
 parsePN (StrLit s) = Just s
 parsePN _ = Nothing
 

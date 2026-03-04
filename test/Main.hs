@@ -11,6 +11,7 @@ import qualified Test.Determiners as Determiners
 import qualified Test.Adjectives as Adjectives
 import qualified Test.CommonVocabulary as CommonVocabulary
 import qualified Test.Invalid as Invalid
+import qualified Test.ProperNouns as ProperNouns
 
 main ∷ IO ()
 main = hspec $ do
@@ -20,4 +21,5 @@ main = hspec $ do
   Determiners.spec
   Adjectives.spec
   CommonVocabulary.spec
+  ProperNouns.spec
   Invalid.spec
