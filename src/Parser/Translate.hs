@@ -97,6 +97,10 @@ parseN (Atom a)
 parseN _ = Nothing
 
 parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
+parseVP (List [Atom "AdvVP", vp, adv]) = do
+  (baseVP, vf) <- parseVP vp
+  advp <- parseAdv adv
+  pure (VPWithAdv baseVP advp, vf)
 parseVP (List [Atom "UseV", v]) = do
   (lemma, vf) <- parseV v
   pure (Intransitive lemma, vf)
@@ -105,6 +109,18 @@ parseVP (List [Atom "UseV2", v2, np]) = do
   obj <- parseNP Objective np
   pure (Transitive lemma obj, vf)
 parseVP _ = Nothing
+
+parseAdv ∷ SExp → Maybe AdvPhrase
+parseAdv (List [Atom "PrepNP", prep, np]) = do
+  prepTxt <- parsePrep prep
+  obj <- parseNP Objective np
+  pure (PrepPhrase prepTxt obj)
+parseAdv _ = Nothing
+
+parsePrep ∷ SExp → Maybe String
+parsePrep (Atom a)
+  | Just base <- stripSuffix "_Prep" a = Just base
+parsePrep _ = Nothing
 
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
@@ -203,6 +219,12 @@ renderVP (Intransitive v) =
   fantasyToken v
 renderVP (Transitive v obj) =
   unwords [fantasyToken v, renderNP obj]
+renderVP (VPWithAdv vp adv) =
+  unwords [renderVP vp, renderAdv adv]
+
+renderAdv ∷ AdvPhrase → String
+renderAdv (PrepPhrase prep np) =
+  unwords [fantasyToken prep, renderNP np]
 
 renderPronoun ∷ Person → Number → PronounCase → String
 renderPronoun First Singular Subjective = "i"

@@ -8,6 +8,7 @@ module Parser.AST
   , PronounCase(..)
   , NounPhrase(..)
   , VerbPhrase(..)
+  , AdvPhrase(..)
   , Sentence(..)
   ) where
 
@@ -41,9 +42,14 @@ data NounPhrase
       }
   deriving (Eq, Show)
 
+data AdvPhrase
+  = PrepPhrase String NounPhrase
+  deriving (Eq, Show)
+
 data VerbPhrase
   = Intransitive String
   | Transitive String NounPhrase
+  | VPWithAdv VerbPhrase AdvPhrase
   deriving (Eq, Show)
 
 data Sentence = Sentence

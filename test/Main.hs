@@ -14,6 +14,7 @@ import qualified Test.Adjectives as Adjectives
 import qualified Test.CommonVocabulary as CommonVocabulary
 import qualified Test.Invalid as Invalid
 import qualified Test.ProperNouns as ProperNouns
+import qualified Test.Prepositions as Prepositions
 
 main ∷ IO ()
 main = do
@@ -28,4 +29,5 @@ main = do
       Adjectives.spec g
       CommonVocabulary.spec g
       ProperNouns.spec g
+      Prepositions.spec g
       Invalid.spec g
