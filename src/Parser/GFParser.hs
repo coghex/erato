@@ -8,40 +8,31 @@ module Parser.GFParser
   ) where
 
 import PGF
-import Parser.Translate (exprToSentence, exprProperNouns)
-import Data.Char (isAlpha, toLower)
+import Parser.Translate (exprToSentence, exprProperNouns, validateExpr)
 
 data GrammarBundle = GrammarBundle
-  { controlledPgf ∷ PGF
-  , fallbackPgf   ∷ PGF
+  { controlledPgf   ∷ PGF
+  , fallbackPgf     ∷ PGF
+  , controlledLang  ∷ CId
+  , controlledMorpho ∷ Morpho
   }
 
 loadGrammars ∷ FilePath → FilePath → IO GrammarBundle
 loadGrammars controlledPath fallbackPath = do
   c <- readPGF controlledPath
   f <- readPGF fallbackPath
-  pure (GrammarBundle c f)
+  let lang   = mkCId "EratoEng"
+      morpho = buildMorpho c lang
+  pure (GrammarBundle c f lang morpho)
 
 parseControlled ∷ GrammarBundle → String → [Expr]
 parseControlled bundle input =
   let pgf    = controlledPgf bundle
-      lang   = mkCId "EratoEng"
+      lang   = controlledLang bundle
+      morpho = controlledMorpho bundle
       typ    = startCat pgf
-      morpho = buildMorpho pgf lang
       parses = parse pgf lang typ input
-      -- Accept a parse only if:
-      --   1. exprToSentence succeeds (well-formed AST)
-      --   2. Every SymbPN "x" in the tree is for a word unknown to the morpho
-      filtered = filter (validParse morpho) parses
-  in filtered
-
-validParse ∷ Morpho → Expr → Bool
-validParse morpho expr =
-  case exprToSentence expr of
-    Nothing -> False
-    Just _  ->
-      let pns = exprProperNouns expr
-      in all (\w -> null (lookupMorpho morpho w)) pns
+  in filter (validParse morpho) parses
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
@@ -49,3 +40,9 @@ parseFallbackAllEng bundle input =
       lang = mkCId "AllEng"
       typ  = startCat pgf
   in parse pgf lang typ input
+
+validParse ∷ Morpho → Expr → Bool
+validParse morpho expr =
+  case validateExpr expr of
+    Nothing         → False
+    Just (_, pns)   → all (\w → null (lookupMorpho morpho w)) pns

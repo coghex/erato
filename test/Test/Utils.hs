@@ -1,7 +1,7 @@
 {-# LANGUAGE Strict, UnicodeSyntax #-}
 
 module Test.Utils
-  ( withGrammars
+  ( loadTestGrammars
   , shouldParse
   , shouldReject
   , shouldParseAs
@@ -16,13 +16,13 @@ import Parser.Translate (exprToSentence)
 import Parser.AST (Sentence)
 import PGF (Expr)
 
-withGrammars ∷ (GrammarBundle → IO ()) → IO ()
-withGrammars action = do
-  hasControlled <- doesFileExist "Grammar/EratoAbs.pgf"
-  hasFallback <- doesFileExist "Grammar/AllEngAbs.pgf"
-  if not (hasControlled && hasFallback)
-    then pendingWith "Missing Grammar/EratoAbs.pgf or Grammar/AllEngAbs.pgf; run gf -make first."
-    else loadGrammars "Grammar/EratoAbs.pgf" "Grammar/AllEngAbs.pgf" >>= action
+loadTestGrammars ∷ IO (Maybe GrammarBundle)
+loadTestGrammars = do
+  hasControlled ← doesFileExist "Grammar/EratoAbs.pgf"
+  hasFallback   ← doesFileExist "Grammar/AllEngAbs.pgf"
+  if hasControlled && hasFallback
+    then Just <$> loadGrammars "Grammar/EratoAbs.pgf" "Grammar/AllEngAbs.pgf"
+    else pure Nothing
 
 shouldParse ∷ ∀ α. (Show α) ⇒ [α] → Expectation
 shouldParse exprs = exprs `shouldSatisfy` (not . null)

@@ -3,6 +3,7 @@
 module Parser.Translate
   ( exprToSentence
   , exprProperNouns
+  , validateExpr
   , translateSentence
   , translateFallback
   ) where
@@ -275,3 +276,10 @@ tokenize (c:cs)
 
 isAtomChar ∷ Char → Bool
 isAtomChar c = not (isSpace c) && c /= '(' && c /= ')'
+
+-- | Parse the Expr once, return the Sentence and all SymbPN strings together
+validateExpr ∷ Expr → Maybe (Sentence, [String])
+validateExpr expr = do
+  sexp <- parseSExp (showExpr [] expr)
+  sentence <- parseSentence sexp
+  pure (sentence, collectSymbPN sexp)
