@@ -24,16 +24,6 @@ data SExp
   | List [SExp]
   deriving (Eq, Show)
 
-parseSentence ∷ SExp → Maybe Sentence
-parseSentence (List [Atom "UttS", s]) =
-  parseSentence s
-parseSentence (List [Atom "MkS", t, p, cl]) = do
-  tense'    <- parseTense t
-  polarity' <- parsePolarity p
-  (subj, vp) <- parseCl cl
-  pure (Sentence tense' polarity' subj vp)
-parseSentence _ = Nothing
-
 parseTense ∷ SExp → Maybe Tense
 parseTense (Atom "TPres") = Just Present
 parseTense (Atom "TPast") = Just Past
@@ -46,27 +36,32 @@ parsePolarity (Atom "PNeg") = Just Negative
 parsePolarity (Atom "UncNeg") = Just Negative
 parsePolarity _             = Nothing
 
+parseSentence ∷ SExp → Maybe Sentence
+parseSentence (List [Atom "UttS", s]) =
+  parseSentence s
+parseSentence (List [Atom "MkS", t, p, cl]) = do
+  tense'    <- parseTense t
+  polarity' <- parsePolarity p
+  (subj, vp) <- parseCl cl
+  if agreementOk tense' polarity' subj vp
+    then pure (Sentence tense' polarity' subj vp)
+    else Nothing
+parseSentence _ = Nothing
+
 parseCl ∷ SExp → Maybe (NounPhrase, VerbPhrase)
 parseCl (List [Atom "Pred", np, vp]) = do
   subj <- parseNP Subjective np
   vps  <- parseVP vp
-  guard (agreementOk subj vps)
   pure (subj, vps)
 parseCl _ = Nothing
-
-agreementOk ∷ NounPhrase → VerbPhrase → Bool
-agreementOk (CommonNoun _ _ _ Plural) (Intransitive "runs") = False
-agreementOk (CommonNoun _ _ _ Singular) (Intransitive "run") = False
-agreementOk (Pronoun _ Plural _) (Intransitive "runs") = False
-agreementOk (Pronoun _ Singular _) (Intransitive "run") = False
-agreementOk _ _ = True
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
 parseNP _ (List [Atom "DetCN", det, n]) = do
   (detText, detNum) <- parseDetInfo det
-  (num, adjs, noun) <- parseN n
-  let finalNum = maybe num id detNum
-  pure (CommonNoun (Just detText) adjs noun finalNum)
+  (nounNum, adjs, noun) <- parseN n
+  case detNum of
+    Just dnum | dnum /= nounNum -> Nothing
+    _ -> pure (CommonNoun (Just detText) adjs noun (maybe nounNum id detNum))
 parseNP _ (List [Atom "UseN", n]) = do
   (num, adjs, noun) <- parseN n
   pure (CommonNoun Nothing adjs noun num)
@@ -82,6 +77,27 @@ parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
 parseDetInfo (Atom "thePl_Det") = Just ("the", Just Plural)
 parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
 parseDetInfo _                  = Nothing
+
+agreementOk ∷ Tense → Polarity → NounPhrase → VerbPhrase → Bool
+agreementOk Present Positive subj (Intransitive v) =
+  case v of
+    "runs" -> isThirdSingular subj
+    "run"  -> not (isThirdSingular subj)
+    _      -> True
+agreementOk Present Negative _ (Intransitive v) =
+  v /= "runs"
+agreementOk _ _ _ _ = True
+
+isThirdSingular ∷ NounPhrase → Bool
+isThirdSingular (ProperNoun _) = True
+isThirdSingular (CommonNoun _ _ _ Singular) = True
+isThirdSingular (Pronoun Third Singular _) = True
+isThirdSingular _ = False
+
+parseV ∷ SExp → Maybe String
+parseV (Atom "run_V")  = Just "run"
+parseV (Atom "runS_V") = Just "runs"
+parseV _               = Nothing
 
 parseN ∷ SExp → Maybe (Number, [String], String)
 parseN (List [Atom "AdjCN", a, n]) = do
@@ -110,11 +126,6 @@ parseDet (Atom "a_Det")     = Just "a"
 parseDet (Atom "thePl_Det") = Just "the"
 parseDet (Atom "aPl_Det")   = Just "some"
 parseDet _                  = Nothing
-
-parseV ∷ SExp → Maybe String
-parseV (Atom "run_V") = Just "run"
-parseV (Atom "runS_V") = Just "runs"
-parseV _              = Nothing
 
 parseV2 ∷ SExp → Maybe String
 parseV2 (Atom "eat_V2") = Just "eat"

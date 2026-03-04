@@ -8,6 +8,7 @@ module Parser.GFParser
   ) where
 
 import PGF
+import Parser.Translate (exprToSentence)
 
 data GrammarBundle = GrammarBundle
   { controlledPgf ∷ PGF
@@ -25,7 +26,8 @@ parseControlled bundle input =
   let pgf  = controlledPgf bundle
       lang = mkCId "EratoEng"
       typ  = startCat pgf
-  in parse pgf lang typ input
+      parses = parse pgf lang typ input
+  in filter (maybe False (const True) . exprToSentence) parses
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
