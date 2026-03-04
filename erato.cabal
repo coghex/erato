@@ -50,4 +50,5 @@ test-suite erato-tests
                     , directory
                     , erato
                     , hspec
+                    , gf
     default-language: GHC2024

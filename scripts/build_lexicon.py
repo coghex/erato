@@ -10,7 +10,7 @@ LEMMA_RE = re.compile(r"^[a-z]+$")
 STOPLIST = {
     "i","me","you","he","him","she","her","it","we","us","they","them",
     "a","an","the","this","that","these","those","my","your","his","her",
-    "its","our","their","mine","yours","hers","ours","theirs"
+    "its","our","their","mine","yours","hers","ours","theirs","some"
 }
 
 SINGULAR_S_NOUNS = {
@@ -168,7 +168,6 @@ def main():
 
     for lemma, info in ranked:
         if info.noun:
-            # drop likely plural-as-lemma nouns (e.g., "dogs")
             if lemma.endswith("s") and not info.noun.plural and lemma not in SINGULAR_S_NOUNS:
                 pass
             else:
@@ -177,7 +176,6 @@ def main():
                     "plural": info.noun.plural
                 })
         if info.verb:
-            # skip likely inflected-verb lemmas like "runs" if no 3sg form
             if info.verb.third_singular is None and lemma.endswith("s"):
                 continue
             verbs.append({
@@ -190,6 +188,22 @@ def main():
             })
         if info.adj:
             adjs.append(lemma)
+
+    # de-dup
+    def dedup(items, key):
+        seen = set()
+        out = []
+        for item in items:
+            k = item[key]
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(item)
+        return out
+
+    nouns = dedup(nouns, "lemma")
+    verbs = dedup(verbs, "lemma")
+    adjs = list(dict.fromkeys(adjs))
 
     data = {"nouns": nouns, "verbs": verbs, "adjectives": adjs}
 
@@ -215,7 +229,6 @@ def generate_gf(data, abs_path, eng_path):
             funs.append(f"    {base}Pl_N  : N ;")
     for v in data["verbs"]:
         base = v["lemma"]
-        # emit both V and V2 if transitive appears
         funs.append(f"    {base}_V    : V ;")
         if v["third_singular"]:
             funs.append(f"    {base}S_V   : V ;")
@@ -270,14 +283,14 @@ def generate_gf(data, abs_path, eng_path):
         pp = v["past_participle"] or past
         prp = v["present_participle"] or (base + "ing")
 
-        lins.append(f'    {base}_V  = mkBaseV "{base}" "{past}" "{pp}" "{prp}" ;')
+        lins.append(f'    {base}_V  = mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}" ;')
         if v["third_singular"]:
-            lins.append(f'    {base}S_V = mk3sgV "{v["third_singular"]}" "{past}" "{pp}" "{prp}" ;')
-
+            lins.append(f'    {base}S_V = mk5V "{v["third_singular"]}" "{v["third_singular"]}" "{past}" "{pp}" "{prp}" ;')
+        
         if v["transitive"]:
-            lins.append(f'    {base}_V2  = dirV2 (mkBaseV "{base}" "{past}" "{pp}" "{prp}") ;')
+            lins.append(f'    {base}_V2  = dirV2 (mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}") ;')
             if v["third_singular"]:
-                lins.append(f'    {base}S_V2 = dirV2 (mk3sgV "{v["third_singular"]}" "{past}" "{pp}" "{prp}") ;')
+                lins.append(f'    {base}S_V2 = dirV2 (mk5V "{v["third_singular"]}" "{v["third_singular"]}" "{past}" "{pp}" "{prp}") ;')
 
     for a in data["adjectives"]:
         lins.append(f'    {a}_A  = mkA "{a}" ;')
