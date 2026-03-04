@@ -124,18 +124,18 @@ def main():
         if lemma is None:
             continue
 
-        pos = (entry.get("pos") or "").lower()
+        pos = (entry.get("pos") or "").lower().strip()
         if pos == "proper noun":
-            continue
-        if pos not in {"noun", "verb", "adjective"}:
             continue
 
         info = lemmas.get(lemma) or LemmaInfo()
+
         if pos == "noun":
             if info.noun is None:
                 info.noun = NounInfo()
             if info.noun.plural is None:
                 info.noun.plural = find_noun_plural(entry)
+
         elif pos == "verb":
             if info.verb is None:
                 info.verb = VerbInfo()
@@ -150,8 +150,12 @@ def main():
                 info.verb.present_participle = prp
             if detect_transitive(entry):
                 info.verb.transitive = True
-        elif pos == "adjective":
+
+        elif pos == "adjective" or pos == "adj" or pos.startswith("adj"):
             info.adj = True
+
+        else:
+            continue
 
         lemmas[lemma] = info
 
@@ -286,7 +290,7 @@ def generate_gf(data, abs_path, eng_path):
         lins.append(f'    {base}_V  = mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}" ;')
         if v["third_singular"]:
             lins.append(f'    {base}S_V = mk5V "{v["third_singular"]}" "{v["third_singular"]}" "{past}" "{pp}" "{prp}" ;')
-        
+
         if v["transitive"]:
             lins.append(f'    {base}_V2  = dirV2 (mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}") ;')
             if v["third_singular"]:
