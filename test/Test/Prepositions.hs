@@ -15,40 +15,40 @@ spec grammars = describe "Prepositions / adverbs" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "dog" Singular)
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (VPWithAdv
           (Intransitive "run")
-          (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular)))
+          (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing)))
 
   it "parses transitive with PP: the woman eats the food with a spoon" $ do
     let exprs = parseControlled grammars "the woman eats the food with a spoon"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "woman" Singular)
+        (CommonNoun (Just "the") [] "woman" Singular Nothing)
         (VPWithAdv
-          (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular))
-          (PrepPhrase "with" (CommonNoun (Just "a") [] "spoon" Singular)))
+          (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
+          (PrepPhrase "with" (CommonNoun (Just "a") [] "spoon" Singular Nothing)))
 
   it "parses plural PP: the dogs run under the tables" $ do
     let exprs = parseControlled grammars "the dogs run under the tables"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "dog" Plural)
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
         (VPWithAdv
           (Intransitive "run")
-          (PrepPhrase "under" (CommonNoun (Just "the") [] "table" Plural)))
+          (PrepPhrase "under" (CommonNoun (Just "the") [] "table" Plural Nothing)))
 
   it "parses negation with PP: the dog does not run in the park" $ do
     let exprs = parseControlled grammars "the dog does not run in the park"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Negative
-        (CommonNoun (Just "the") [] "dog" Singular)
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (VPWithAdv
           (Intransitive "run")
-          (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular)))
+          (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing)))
 
   it "parses pronoun with PP: I run with them" $ do
     let exprs = parseControlled grammars "I run with them"
@@ -65,9 +65,9 @@ spec grammars = describe "Prepositions / adverbs" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "dog" Singular)
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (VPWithAdv
           (VPWithAdv
             (Intransitive "run")
-            (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular)))
-          (PrepPhrase "with" (CommonNoun (Just "the") [] "woman" Singular)))
+            (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing)))
+          (PrepPhrase "with" (CommonNoun (Just "the") [] "woman" Singular Nothing)))

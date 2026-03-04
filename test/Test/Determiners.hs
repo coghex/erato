@@ -15,7 +15,7 @@ spec grammars = describe "Determiners" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "a") [] "dog" Singular)
+        (CommonNoun (Just "a") [] "dog" Singular Nothing)
         (Intransitive "run")
 
   it "parses plural determiner: some dogs run" $ do
@@ -23,7 +23,7 @@ spec grammars = describe "Determiners" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "some") [] "dog" Plural)
+        (CommonNoun (Just "some") [] "dog" Plural Nothing)
         (Intransitive "run")
 
   it "rejects mismatch: a dogs run" $ do

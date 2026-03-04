@@ -15,7 +15,7 @@ spec grammars = describe "Negation" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Negative
-        (CommonNoun (Just "the") [] "dog" Singular)
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
 
   it "parses negation: I do not run" $ do
@@ -31,13 +31,13 @@ spec grammars = describe "Negation" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Negative
-        (CommonNoun (Just "the") [] "man" Singular)
-        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular))
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
+        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
 
   it "parses negation: the dogs do not run" $ do
     let exprs = parseControlled grammars "the dogs do not run"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Negative
-        (CommonNoun (Just "the") [] "dog" Plural)
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
         (Intransitive "run")

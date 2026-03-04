@@ -9,6 +9,7 @@ module Parser.AST
   , NounPhrase(..)
   , VerbPhrase(..)
   , AdvPhrase(..)
+  , RelClause(..)
   , Sentence(..)
   ) where
 
@@ -39,7 +40,13 @@ data NounPhrase
       , adjs  ∷ [String]
       , noun  ∷ String
       , number ∷ Number
+      , rel    ∷ Maybe RelClause
       }
+  deriving (Eq, Show)
+
+data RelClause
+  = RelVP VerbPhrase
+  | RelV2 String NounPhrase
   deriving (Eq, Show)
 
 data AdvPhrase

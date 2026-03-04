@@ -15,7 +15,7 @@ spec grammars = describe "Agreement" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "dog" Singular)
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
 
   it "parses plural agreement: the dogs run" $ do
@@ -23,7 +23,7 @@ spec grammars = describe "Agreement" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "dog" Plural)
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
         (Intransitive "run")
 
   it "rejects mismatch: the dogs runs" $ do

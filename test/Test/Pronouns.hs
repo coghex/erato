@@ -39,5 +39,5 @@ spec grammars = describe "Pronouns" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "man" Singular)
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
         (Transitive "eat" (Pronoun Third Singular Objective))

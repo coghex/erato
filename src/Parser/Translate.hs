@@ -73,28 +73,52 @@ parseCl _ = Nothing
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
 parseNP _ (List [Atom "DetCN", det, n]) = do
   (detText, detNum) <- parseDetInfo det
-  (nounNum, adjs, noun) <- parseN n
+  (nounNum, adjs, noun, rel) <- parseN n
+  let finalNum = maybe nounNum id detNum
   case detNum of
     Just dnum | dnum /= nounNum -> Nothing
-    _ -> pure (CommonNoun (Just detText) adjs noun (maybe nounNum id detNum))
+    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
 parseNP _ (List [Atom "UseN", n]) = do
-  (num, adjs, noun) <- parseN n
-  pure (CommonNoun Nothing adjs noun num)
+  (num, adjs, noun, rel) <- parseN n
+  pure (CommonNoun Nothing adjs noun num rel)
 parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
 parseNP c (List [Atom "UsePron", pr]) = do
   (p, n) <- parsePron pr
   pure (Pronoun p n c)
 parseNP _ _ = Nothing
 
-parseN ∷ SExp → Maybe (Number, [String], String)
+parseN ∷ SExp → Maybe (Number, [String], String, Maybe RelClause)
 parseN (List [Atom "AdjCN", a, n]) = do
   adj <- parseA a
-  (num, adjs, noun) <- parseN n
-  pure (num, adj : adjs, noun)
+  (num, adjs, noun, rel) <- parseN n
+  pure (num, adj : adjs, noun, rel)
+parseN (List [Atom "RelCN", n, rc]) = do
+  (num, adjs, noun, rel) <- parseN n
+  rc' <- parseRelClause rc
+  case rel of
+    Nothing -> pure (num, adjs, noun, Just rc')
+    Just _  -> Nothing
 parseN (Atom a)
-  | Just base <- stripSuffix "Pl_N" a = Just (Plural, [], base)
-  | Just base <- stripSuffix "_N" a   = Just (Singular, [], base)
+  | Just base <- stripSuffix "Pl_N" a = Just (Plural, [], base, Nothing)
+  | Just base <- stripSuffix "_N" a   = Just (Singular, [], base, Nothing)
 parseN _ = Nothing
+
+parseRelClause ∷ SExp → Maybe RelClause
+parseRelClause (List [Atom "RelVP", rp, vp]) = do
+  _ <- parseRP rp
+  (vps, _) <- parseVP vp
+  pure (RelVP vps)
+parseRelClause (List [Atom "RelV2", rp, np, v2]) = do
+  _ <- parseRP rp
+  subj <- parseNP Subjective np
+  (lemma, _) <- parseV2 v2
+  pure (RelV2 lemma subj)
+parseRelClause _ = Nothing
+
+parseRP ∷ SExp → Maybe ()
+parseRP (Atom "who_RP")  = Just ()
+parseRP (Atom "that_RP") = Just ()
+parseRP _ = Nothing
 
 parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
 parseVP (List [Atom "AdvVP", vp, adv]) = do
@@ -182,7 +206,7 @@ agreementOk _ _ _ _ = True
 
 isThirdSingular ∷ NounPhrase → Bool
 isThirdSingular (ProperNoun _) = True
-isThirdSingular (CommonNoun _ _ _ Singular) = True
+isThirdSingular (CommonNoun _ _ _ Singular _) = True
 isThirdSingular (Pronoun Third Singular _) = True
 isThirdSingular _ = False
 
@@ -211,8 +235,17 @@ renderPolarity Negative = "no"
 renderNP ∷ NounPhrase → String
 renderNP (ProperNoun s) = fantasyToken s
 renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
-renderNP (CommonNoun det adjs noun _) =
-  unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
+renderNP (CommonNoun det adjs noun _ rel) =
+  let base = unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
+  in case rel of
+       Nothing -> base
+       Just rc -> unwords [base, renderRelClause rc]
+
+renderRelClause ∷ RelClause → String
+renderRelClause (RelVP vp) =
+  unwords [fantasyToken "who", renderVP vp]
+renderRelClause (RelV2 v obj) =
+  unwords [fantasyToken "that", fantasyToken v, renderNP obj]
 
 renderVP ∷ VerbPhrase → String
 renderVP (Intransitive v) =

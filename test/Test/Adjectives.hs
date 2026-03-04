@@ -15,7 +15,7 @@ spec grammars = describe "Adjectives" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") ["red"] "dog" Singular)
+        (CommonNoun (Just "the") ["red"] "dog" Singular Nothing)
         (Intransitive "run")
 
   it "parses adjective with plural: the red dogs run" $ do
@@ -23,7 +23,7 @@ spec grammars = describe "Adjectives" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") ["red"] "dog" Plural)
+        (CommonNoun (Just "the") ["red"] "dog" Plural Nothing)
         (Intransitive "run")
 
   it "parses multiple adjectives: the red dog eats the red food" $ do
@@ -31,5 +31,5 @@ spec grammars = describe "Adjectives" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") ["red"] "dog" Singular)
-        (Transitive "eat" (CommonNoun (Just "the") ["red"] "food" Singular))
+        (CommonNoun (Just "the") ["red"] "dog" Singular Nothing)
+        (Transitive "eat" (CommonNoun (Just "the") ["red"] "food" Singular Nothing))

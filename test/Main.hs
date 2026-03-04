@@ -15,6 +15,7 @@ import qualified Test.CommonVocabulary as CommonVocabulary
 import qualified Test.Invalid as Invalid
 import qualified Test.ProperNouns as ProperNouns
 import qualified Test.Prepositions as Prepositions
+import qualified Test.RelativeClauses as RelativeClauses
 
 main ∷ IO ()
 main = do
@@ -30,4 +31,5 @@ main = do
       CommonVocabulary.spec g
       ProperNouns.spec g
       Prepositions.spec g
+      RelativeClauses.spec g
       Invalid.spec g

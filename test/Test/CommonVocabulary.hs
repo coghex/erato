@@ -15,7 +15,7 @@ spec grammars = describe "Common vocabulary" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "cat" Singular)
+        (CommonNoun (Just "the") [] "cat" Singular Nothing)
         (Intransitive "run")
 
   it "parses: the cats run" $ do
@@ -23,7 +23,7 @@ spec grammars = describe "Common vocabulary" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "cat" Plural)
+        (CommonNoun (Just "the") [] "cat" Plural Nothing)
         (Intransitive "run")
 
   it "parses: the man sees the dog" $ do
@@ -31,13 +31,13 @@ spec grammars = describe "Common vocabulary" $ do
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "man" Singular)
-        (Transitive "see" (CommonNoun (Just "the") [] "dog" Singular))
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
+        (Transitive "see" (CommonNoun (Just "the") [] "dog" Singular Nothing))
 
   it "parses: the woman sees the dog" $ do
     let exprs = parseControlled grammars "the woman sees the dog"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "woman" Singular)
-        (Transitive "see" (CommonNoun (Just "the") [] "dog" Singular))
+        (CommonNoun (Just "the") [] "woman" Singular Nothing)
+        (Transitive "see" (CommonNoun (Just "the") [] "dog" Singular Nothing))

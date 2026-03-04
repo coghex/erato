@@ -1,0 +1,47 @@
+{-# LANGUAGE Strict, UnicodeSyntax #-}
+
+module Test.RelativeClauses (spec) where
+
+import Test.Hspec
+
+import Parser.AST
+import Parser.GFParser
+import Test.Utils
+
+spec ∷ GrammarBundle → Spec
+spec grammars = describe "Relative clauses" $ do
+  it "parses subject relative: the man who runs eats" $ do
+    let exprs = parseControlled grammars "the man who runs eats"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "man" Singular
+          (Just (RelVP (Intransitive "run"))))
+        (Intransitive "eat")
+
+  it "parses object relative: the dog that the woman sees runs" $ do
+    let exprs = parseControlled grammars "the dog that the woman sees runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular
+          (Just (RelV2 "see" (CommonNoun (Just "the") [] "woman" Singular Nothing))))
+        (Intransitive "run")
+
+  it "parses plural relative: the dogs that the man sees run" $ do
+    let exprs = parseControlled grammars "the dogs that the man sees run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Plural
+          (Just (RelV2 "see" (CommonNoun (Just "the") [] "man" Singular Nothing))))
+        (Intransitive "run")
+
+  it "parses relative with adjective: the red dog that runs eats" $ do
+    let exprs = parseControlled grammars "the red dog that runs eats"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["red"] "dog" Singular
+          (Just (RelVP (Intransitive "run"))))
+        (Intransitive "eat")

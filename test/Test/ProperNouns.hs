@@ -24,12 +24,12 @@ spec grammars = describe "Proper nouns (unknown words)" $ do
     exprs `shouldParseAs`
       Sentence Present Positive
         (ProperNoun "eBay")
-        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular))
+        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
 
   it "parses unknown object: the man eats iPhone" $ do
     let exprs = parseControlled grammars "the man eats iPhone"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
-        (CommonNoun (Just "the") [] "man" Singular)
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
         (Transitive "eat" (ProperNoun "iPhone"))
