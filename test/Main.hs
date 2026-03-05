@@ -16,6 +16,7 @@ import qualified Test.Invalid as Invalid
 import qualified Test.ProperNouns as ProperNouns
 import qualified Test.Prepositions as Prepositions
 import qualified Test.RelativeClauses as RelativeClauses
+import qualified Test.Coordination as Coordination
 
 main ∷ IO ()
 main = do
@@ -32,4 +33,5 @@ main = do
       ProperNouns.spec g
       Prepositions.spec g
       RelativeClauses.spec g
+      Coordination.spec g
       Invalid.spec g

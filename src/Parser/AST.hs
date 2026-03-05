@@ -11,6 +11,7 @@ module Parser.AST
   , AdvPhrase(..)
   , RelClause(..)
   , Sentence(..)
+  , Conj(..)
   ) where
 
 data Tense = Present | Past | Future
@@ -28,6 +29,9 @@ data Number = Singular | Plural
 data PronounCase = Subjective | Objective
   deriving (Eq, Show)
 
+data Conj = And | Or
+  deriving (Eq, Show)
+
 data NounPhrase
   = ProperNoun String
   | Pronoun
@@ -42,6 +46,7 @@ data NounPhrase
       , number ∷ Number
       , rel    ∷ Maybe RelClause
       }
+  | CoordNP Conj NounPhrase NounPhrase
   deriving (Eq, Show)
 
 data RelClause
@@ -57,6 +62,7 @@ data VerbPhrase
   = Intransitive String
   | Transitive String NounPhrase
   | VPWithAdv VerbPhrase AdvPhrase
+  | CoordVP Conj VerbPhrase VerbPhrase
   deriving (Eq, Show)
 
 data Sentence = Sentence

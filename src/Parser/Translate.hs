@@ -8,7 +8,7 @@ module Parser.Translate
   , translateFallback
   ) where
 
-import PGF (Expr, showExpr)
+import PGF hiding (Token)
 import Data.Char (isAlpha, isSpace, toLower)
 import Parser.AST
 
@@ -49,6 +49,17 @@ parseSentence (List [Atom "MkS", t, p, cl]) = do
   if agreementOk tense' polarity' subj vform
     then pure (Sentence tense' polarity' subj vp)
     else Nothing
+parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
+  tense'    <- parseTense t
+  polarity' <- parsePolarity p
+  subj <- parseNP Subjective np
+  c <- parseConj conj
+  (v1, vf1) <- parseVP vp1
+  (v2, vf2) <- parseVP vp2
+  if agreementOk tense' polarity' subj vf1
+     && agreementOk tense' polarity' subj vf2
+    then pure (Sentence tense' polarity' subj (CoordVP c v1 v2))
+    else Nothing
 parseSentence _ = Nothing
 
 parseTense ∷ SExp → Maybe Tense
@@ -69,23 +80,6 @@ parseCl (List [Atom "Pred", np, vp]) = do
   (vps, vf) <- parseVP vp
   pure (subj, vps, vf)
 parseCl _ = Nothing
-
-parseNP ∷ PronounCase → SExp → Maybe NounPhrase
-parseNP _ (List [Atom "DetCN", det, n]) = do
-  (detText, detNum) <- parseDetInfo det
-  (nounNum, adjs, noun, rel) <- parseN n
-  let finalNum = maybe nounNum id detNum
-  case detNum of
-    Just dnum | dnum /= nounNum -> Nothing
-    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
-parseNP _ (List [Atom "UseN", n]) = do
-  (num, adjs, noun, rel) <- parseN n
-  pure (CommonNoun Nothing adjs noun num rel)
-parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
-parseNP c (List [Atom "UsePron", pr]) = do
-  (p, n) <- parsePron pr
-  pure (Pronoun p n c)
-parseNP _ _ = Nothing
 
 parseN ∷ SExp → Maybe (Number, [String], String, Maybe RelClause)
 parseN (List [Atom "AdjCN", a, n]) = do
@@ -114,20 +108,6 @@ parseRelClause (List [Atom "RelV2", rp, np, v2]) = do
   (lemma, _) <- parseV2 v2
   pure (RelV2 lemma subj)
 parseRelClause _ = Nothing
-
-parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
-parseVP (List [Atom "AdvVP", vp, adv]) = do
-  (baseVP, vf) <- parseVP vp
-  advp <- parseAdv adv
-  pure (VPWithAdv baseVP advp, vf)
-parseVP (List [Atom "UseV", v]) = do
-  (lemma, vf) <- parseV v
-  pure (Intransitive lemma, vf)
-parseVP (List [Atom "UseV2", v2, np]) = do
-  (lemma, vf) <- parseV2 v2
-  obj <- parseNP Objective np
-  pure (Transitive lemma obj, vf)
-parseVP _ = Nothing
 
 parseAdv ∷ SExp → Maybe AdvPhrase
 parseAdv (List [Atom "PrepNP", prep, np]) = do
@@ -204,12 +184,6 @@ agreementOk Present Negative _ vform =
   vform == BaseForm
 agreementOk _ _ _ _ = True
 
-isThirdSingular ∷ NounPhrase → Bool
-isThirdSingular (ProperNoun _) = True
-isThirdSingular (CommonNoun _ _ _ Singular _) = True
-isThirdSingular (Pronoun Third Singular _) = True
-isThirdSingular _ = False
-
 translateSentence ∷ Sentence → String
 translateSentence s =
   unwords
@@ -223,6 +197,81 @@ translateFallback ∷ String → String
 translateFallback input =
   unwords (map fantasyToken (words input))
 
+parseNP ∷ PronounCase → SExp → Maybe NounPhrase
+parseNP _ (List [Atom "ConjNP", conj, np1, np2]) = do
+  c <- parseConj conj
+  n1 <- parseNP Subjective np1
+  n2 <- parseNP Subjective np2
+  pure (CoordNP c n1 n2)
+parseNP _ (List [Atom "DetCN", det, n]) = do
+  (detText, detNum) <- parseDetInfo det
+  (nounNum, adjs, noun, rel) <- parseN n
+  let finalNum = maybe nounNum id detNum
+  case detNum of
+    Just dnum | dnum /= nounNum -> Nothing
+    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
+parseNP _ (List [Atom "UseN", n]) = do
+  (num, adjs, noun, rel) <- parseN n
+  pure (CommonNoun Nothing adjs noun num rel)
+parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
+parseNP c (List [Atom "UsePron", pr]) = do
+  (p, n) <- parsePron pr
+  pure (Pronoun p n c)
+parseNP _ _ = Nothing
+
+parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
+parseVP (List [Atom "ConjVP", conj, vp1, vp2]) = do
+  c <- parseConj conj
+  (v1, _) <- parseVP vp1
+  (v2, _) <- parseVP vp2
+  pure (CoordVP c v1 v2, BaseForm)
+parseVP (List [Atom "AdvVP", vp, adv]) = do
+  (baseVP, vf) <- parseVP vp
+  advp <- parseAdv adv
+  pure (VPWithAdv baseVP advp, vf)
+parseVP (List [Atom "UseV", v]) = do
+  (lemma, vf) <- parseV v
+  pure (Intransitive lemma, vf)
+parseVP (List [Atom "UseV2", v2, np]) = do
+  (lemma, vf) <- parseV2 v2
+  obj <- parseNP Objective np
+  pure (Transitive lemma obj, vf)
+parseVP _ = Nothing
+
+parseConj ∷ SExp → Maybe Conj
+parseConj (Atom "and_Conj") = Just And
+parseConj (Atom "or_Conj")  = Just Or
+parseConj _ = Nothing
+
+renderNP ∷ NounPhrase → String
+renderNP (CoordNP c a b) =
+  unwords [renderNP a, renderConj c, renderNP b]
+renderNP (ProperNoun s) = fantasyToken s
+renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
+renderNP (CommonNoun det adjs noun _ rel) =
+  let base = unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
+  in case rel of
+       Nothing -> base
+       Just rc -> unwords [base, renderRelClause rc]
+
+renderVP ∷ VerbPhrase → String
+renderVP (CoordVP c a b) =
+  unwords [renderVP a, renderConj c, renderVP b]
+renderVP (Intransitive v) = fantasyToken v
+renderVP (Transitive v obj) = unwords [fantasyToken v, renderNP obj]
+renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
+
+renderConj ∷ Conj → String
+renderConj And = fantasyToken "and"
+renderConj Or  = fantasyToken "or"
+
+isThirdSingular ∷ NounPhrase → Bool
+isThirdSingular (CoordNP _ _ _) = False
+isThirdSingular (ProperNoun _) = True
+isThirdSingular (CommonNoun _ _ _ Singular _) = True
+isThirdSingular (Pronoun Third Singular _) = True
+isThirdSingular _ = False
+
 renderTense ∷ Tense → String
 renderTense Present = "ta"
 renderTense Past    = "na"
@@ -232,28 +281,11 @@ renderPolarity ∷ Polarity → String
 renderPolarity Positive = "ke"
 renderPolarity Negative = "no"
 
-renderNP ∷ NounPhrase → String
-renderNP (ProperNoun s) = fantasyToken s
-renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
-renderNP (CommonNoun det adjs noun _ rel) =
-  let base = unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
-  in case rel of
-       Nothing -> base
-       Just rc -> unwords [base, renderRelClause rc]
-
 renderRelClause ∷ RelClause → String
 renderRelClause (RelVP vp) =
   unwords [fantasyToken "who", renderVP vp]
 renderRelClause (RelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken v, renderNP obj]
-
-renderVP ∷ VerbPhrase → String
-renderVP (Intransitive v) =
-  fantasyToken v
-renderVP (Transitive v obj) =
-  unwords [fantasyToken v, renderNP obj]
-renderVP (VPWithAdv vp adv) =
-  unwords [renderVP vp, renderAdv adv]
 
 renderAdv ∷ AdvPhrase → String
 renderAdv (PrepPhrase prep np) =
