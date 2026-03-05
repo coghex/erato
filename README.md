@@ -50,6 +50,11 @@ gf -make -path=.:~/build/gf-rgl/src:~/build/gf-rgl/src/english -output-dir=Gramm
 
 ---
 
+dev note:
+Coordination implemented via MkSCoord
+RGL lacks direct VP coordination
+mkTemp t ASimul used for VPS
+
 ## Checklist
 
 ### ✅ Implemented
@@ -61,12 +66,15 @@ gf -make -path=.:~/build/gf-rgl/src:~/build/gf-rgl/src/english -output-dir=Gramm
 - [x] Agreement mismatch rejection (e.g., “the dogs runs”)
 - [x] Lexicon generation from Kaikki (Wiktionary) + wordfreq ranking
 - [x] Generated lexicon integrated into GF grammar
+- [x] Coordination (NP/VP/S conjunction)
+- [x] Adverbial modifiers
+- [x] Relative clauses
 
 ### ☐ To implement
 - [ ] Proper‑noun inference at runtime
 - [ ] Additional verb tenses (past/perfect)
 - [ ] Question forms
-- [ ] Relative clauses
-- [ ] Adverbial modifiers
-- [ ] Coordination (NP/VP/S conjunction)
+- [ ] negation inside RCs (e.g., “the dog that does not run is big”)
+- [ ] possessives
+- [ ] quantifiers (e.g., “every dog runs”)
 ```

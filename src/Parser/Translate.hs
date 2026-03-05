@@ -220,11 +220,6 @@ parseNP c (List [Atom "UsePron", pr]) = do
 parseNP _ _ = Nothing
 
 parseVP ∷ SExp → Maybe (VerbPhrase, VerbForm)
-parseVP (List [Atom "ConjVP", conj, vp1, vp2]) = do
-  c <- parseConj conj
-  (v1, _) <- parseVP vp1
-  (v2, _) <- parseVP vp2
-  pure (CoordVP c v1 v2, BaseForm)
 parseVP (List [Atom "AdvVP", vp, adv]) = do
   (baseVP, vf) <- parseVP vp
   advp <- parseAdv adv
