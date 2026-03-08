@@ -27,6 +27,14 @@ renderSentenceTree (Question t p subj vp) =
     , "\\- verb"
     , renderVP "   " vp
     ]
+renderSentenceTree (WhQuestion t p whClause) =
+  unlines
+    [ "WhQuestion"
+    , "|- tense: " <> show t
+    , "|- polarity: " <> show p
+    , "\\- clause"
+    , renderWhClause "   " whClause
+    ]
 renderSentenceTree (Existential t p np) =
   unlines
     [ "Existential"
@@ -115,4 +123,28 @@ renderVP indent vp =
         [ indent <> "|- CoordVP (" <> show c <> ")"
         , renderVP (indent <> "   ") a
         , renderVP (indent <> "   ") b
+        ]
+
+renderWhClause ∷ String → WhClause → String
+renderWhClause indent whClause =
+  case whClause of
+    SubjectWh qword vp ->
+      unlines
+        [ indent <> "|- SubjectWh (" <> show qword <> ")"
+        , renderVP (indent <> "   ") vp
+        ]
+    ObjectWh qword subj verb ->
+      unlines
+        [ indent <> "|- ObjectWh (" <> show qword <> ")"
+        , indent <> "|- subject"
+        , renderNP (indent <> "   ") subj
+        , indent <> "\\- verb: " <> verb
+        ]
+    AdvWh qword subj vp ->
+      unlines
+        [ indent <> "|- AdvWh (" <> show qword <> ")"
+        , indent <> "|- subject"
+        , renderNP (indent <> "   ") subj
+        , indent <> "\\- verb"
+        , renderVP (indent <> "   ") vp
         ]

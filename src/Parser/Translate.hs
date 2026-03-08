@@ -39,6 +39,11 @@ data SExp
 data VerbForm = BaseForm | ThirdSingular
   deriving (Eq, Show)
 
+data ParsedQuestion
+  = ParsedPolarQuestion NounPhrase VerbPhrase
+  | ParsedWhQuestion WhClause
+  deriving (Eq, Show)
+
 parseSentence ∷ SExp → Maybe Sentence
 parseSentence (List [Atom "UttS", s]) =
   parseSentence s
@@ -66,14 +71,46 @@ parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
 parseSentence _ = Nothing
 
 parseQuestion ∷ SExp → Maybe Sentence
-parseQuestion (List [Atom "MkQS", t, p, cl]) = do
+parseQuestion (List [Atom "MkQS", t, p, qcl]) = do
   tense' <- parseTense t
   polarity' <- parsePolarity p
+  parsed <- parseQCl qcl
+  pure $
+    case parsed of
+      ParsedPolarQuestion subj vp -> Question tense' polarity' subj vp
+      ParsedWhQuestion whClause   -> WhQuestion tense' polarity' whClause
+parseQuestion _ = Nothing
+
+parseQCl ∷ SExp → Maybe ParsedQuestion
+parseQCl (List [Atom "QuestCl", cl]) = do
   (subj, vp, vform) <- parseCl cl
   if questionAgreementOk vp vform
-    then pure (Question tense' polarity' subj vp)
+    then pure (ParsedPolarQuestion subj vp)
     else Nothing
-parseQuestion _ = Nothing
+parseQCl (List [Atom "QuestVP", ip, vp]) = do
+  qword <- parseQuestionIP ip
+  (vps, vform) <- parseVP vp
+  if subjectQuestionAgreementOk vps vform
+    then pure (ParsedWhQuestion (SubjectWh qword vps))
+    else Nothing
+parseQCl (List [Atom "QuestV2", ip, np, v2]) = do
+  qword <- parseQuestionIP ip
+  subj <- parseNP Subjective np
+  (lemma, vform) <- parseV2 v2
+  if vform == BaseForm
+    then pure (ParsedWhQuestion (ObjectWh qword subj lemma))
+    else Nothing
+parseQCl (List [Atom "QuestIAdv", iadv, cl]) = do
+  qword <- parseQuestionIAdv iadv
+  (subj, vp, vform) <- parseCl cl
+  if questionAgreementOk vp vform
+    then pure (ParsedWhQuestion (AdvWh qword subj vp))
+    else Nothing
+parseQCl cl = do
+  (subj, vp, vform) <- parseCl cl
+  if questionAgreementOk vp vform
+    then pure (ParsedPolarQuestion subj vp)
+    else Nothing
 
 parseClAsSentence ∷ Tense → Polarity → SExp → Maybe Sentence
 parseClAsSentence tense' polarity' (List [Atom "ExistPred", np]) = do
@@ -162,6 +199,15 @@ parseRP (Atom "who_RP")  = Just ()
 parseRP (Atom "that_RP") = Just ()
 parseRP _ = Nothing
 
+parseQuestionIP ∷ SExp → Maybe QuestionWord
+parseQuestionIP (Atom "who_IP")  = Just Who
+parseQuestionIP (Atom "what_IP") = Just What
+parseQuestionIP _ = Nothing
+
+parseQuestionIAdv ∷ SExp → Maybe QuestionWord
+parseQuestionIAdv (Atom "where_IAdv") = Just Where
+parseQuestionIAdv _ = Nothing
+
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
 parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
@@ -240,6 +286,10 @@ questionAgreementOk ∷ VerbPhrase → VerbForm → Bool
 questionAgreementOk vp vform =
   skipAgreement vp || vform == BaseForm
 
+subjectQuestionAgreementOk ∷ VerbPhrase → VerbForm → Bool
+subjectQuestionAgreementOk vp vform =
+  skipAgreement vp || vform == ThirdSingular || vform == BaseForm
+
 agreementOk ∷ Tense → Polarity → NounPhrase → VerbForm → Bool
 agreementOk Present Positive subj vform =
   case (isThirdSingular subj, vform) of
@@ -272,6 +322,13 @@ translateSentence (Question t p subj vp) =
     , renderPolarity p
     , renderNP subj
     , renderVP vp
+    ]
+translateSentence (WhQuestion t p whClause) =
+  unwords
+    [ fantasyToken "question"
+    , renderTense t
+    , renderPolarity p
+    , renderWhClause whClause
     ]
 translateSentence (Existential t p np) =
   unwords
@@ -360,6 +417,19 @@ renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
 renderVP (Passive v) = unwords [fantasyToken "be", fantasyToken v]
 renderVP (Progressive vp) = unwords [fantasyToken "be", renderVP vp]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
+
+renderWhClause ∷ WhClause → String
+renderWhClause (SubjectWh qword vp) =
+  unwords [renderQuestionWord qword, renderVP vp]
+renderWhClause (ObjectWh qword subj verb) =
+  unwords [renderQuestionWord qword, renderNP subj, fantasyToken verb]
+renderWhClause (AdvWh qword subj vp) =
+  unwords [renderQuestionWord qword, renderNP subj, renderVP vp]
+
+renderQuestionWord ∷ QuestionWord → String
+renderQuestionWord Who = fantasyToken "who"
+renderQuestionWord What = fantasyToken "what"
+renderQuestionWord Where = fantasyToken "where"
 
 renderConj ∷ Conj → String
 renderConj And = fantasyToken "and"

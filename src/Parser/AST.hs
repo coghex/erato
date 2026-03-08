@@ -6,10 +6,12 @@ module Parser.AST
   , Person(..)
   , Number(..)
   , PronounCase(..)
+  , QuestionWord(..)
   , NounPhrase(..)
   , VerbPhrase(..)
   , AdvPhrase(..)
   , RelClause(..)
+  , WhClause(..)
   , Sentence(..)
   , Conj(..)
   ) where
@@ -27,6 +29,9 @@ data Number = Singular | Plural
   deriving (Eq, Show)
 
 data PronounCase = Subjective | Objective
+  deriving (Eq, Show)
+
+data QuestionWord = Who | What | Where
   deriving (Eq, Show)
 
 data Conj = And | Or
@@ -70,6 +75,12 @@ data VerbPhrase
   | CoordVP Conj VerbPhrase VerbPhrase
   deriving (Eq, Show)
 
+data WhClause
+  = SubjectWh QuestionWord VerbPhrase
+  | ObjectWh QuestionWord NounPhrase String
+  | AdvWh QuestionWord NounPhrase VerbPhrase
+  deriving (Eq, Show)
+
 data Sentence
   = Sentence
     { tense    ∷ Tense
@@ -78,6 +89,7 @@ data Sentence
     , verb     ∷ VerbPhrase
     }
   | Question Tense Polarity NounPhrase VerbPhrase
+  | WhQuestion Tense Polarity WhClause
   | Existential Tense Polarity NounPhrase
   | Imperative Polarity VerbPhrase
   deriving (Eq, Show)

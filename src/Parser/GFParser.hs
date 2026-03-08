@@ -15,7 +15,7 @@ import Data.List (minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import PGF
-import Parser.AST (AdvPhrase(..), NounPhrase(..), Number(..), RelClause(..), Sentence(..), VerbPhrase(..))
+import Parser.AST (AdvPhrase(..), NounPhrase(..), Number(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
 import Parser.Translate (exprToSentence, validateExpr)
 
 data GrammarBundle = GrammarBundle
@@ -109,14 +109,29 @@ sentenceFormPenalty _                = 0
 sentenceLexicalPenalty ∷ Sentence → Int
 sentenceLexicalPenalty (Sentence _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
 sentenceLexicalPenalty (Question _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
+sentenceLexicalPenalty (WhQuestion _ _ whClause) = whClauseLexicalPenalty whClause
 sentenceLexicalPenalty (Existential _ _ np)   = nounPhraseLexicalPenalty np
 sentenceLexicalPenalty (Imperative _ vp)      = verbPhraseLexicalPenalty vp
 
 sentenceBareNounPenalty ∷ Sentence → Int
 sentenceBareNounPenalty (Sentence _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
 sentenceBareNounPenalty (Question _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
+sentenceBareNounPenalty (WhQuestion _ _ whClause) = whClauseBarePenalty whClause
 sentenceBareNounPenalty (Existential _ _ np)   = nounPhraseBarePenalty np
 sentenceBareNounPenalty (Imperative _ vp)      = verbPhraseBarePenalty vp
+
+whClauseLexicalPenalty ∷ WhClause → Int
+whClauseLexicalPenalty (SubjectWh _ vp) = verbPhraseLexicalPenalty vp
+whClauseLexicalPenalty (ObjectWh _ subj verb) =
+  nounPhraseLexicalPenalty subj + functionWordPenalty verb
+whClauseLexicalPenalty (AdvWh _ subj vp) =
+  nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
+
+whClauseBarePenalty ∷ WhClause → Int
+whClauseBarePenalty (SubjectWh _ vp) = verbPhraseBarePenalty vp
+whClauseBarePenalty (ObjectWh _ subj _) = nounPhraseBarePenalty subj
+whClauseBarePenalty (AdvWh _ subj vp) =
+  nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
 
 nounPhraseLexicalPenalty ∷ NounPhrase → Int
 nounPhraseLexicalPenalty (ProperNoun _) = 0

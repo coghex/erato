@@ -57,3 +57,47 @@ spec grammars = describe "Questions" $ do
       Question Present Negative
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
+
+  it "parses subject wh-question: who runs" $ do
+    let exprs = parseControlled grammars "who runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectWh Who (Intransitive "run"))
+
+  it "prefers subject wh-question parse for: who runs" $ do
+    parsePreferredControlledSentence grammars "who runs"
+      `shouldBe`
+        Just
+          (WhQuestion Present Positive
+            (SubjectWh Who (Intransitive "run")))
+
+  it "parses subject wh-question with object: who eats the food" $ do
+    let exprs = parseControlled grammars "who eats the food"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectWh Who
+          (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing)))
+
+  it "parses object wh-question: what does the man eat" $ do
+    let exprs = parseControlled grammars "what does the man eat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectWh What
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "eat")
+
+  it "parses adverb wh-question: where does the dog run" $ do
+    let exprs = parseControlled grammars "where does the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh Where
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (Intransitive "run"))
+
+  it "rejects inflected object wh-question verb: what does the man eats" $ do
+    let exprs = parseControlled grammars "what does the man eats"
+    shouldReject exprs
