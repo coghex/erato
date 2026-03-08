@@ -48,10 +48,11 @@ test-suite erato-tests
     hs-source-dirs:   test
     other-modules:    Test.Utils
                     , Test.Adjectives
-                    , Test.Agreement
-                    , Test.CommonVocabulary
-                    , Test.Coordination
-                    , Test.Copula
+                     , Test.Agreement
+                     , Test.CommonVocabulary
+                     , Test.Complements
+                     , Test.Coordination
+                     , Test.Copula
                     , Test.Determiners
                     , Test.Existential
                     , Test.Imperative

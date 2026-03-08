@@ -107,6 +107,29 @@ renderVP indent vp =
         , indent <> "\\- object"
         , renderNP (indent <> "   ") obj
         ]
+    VVComplement v comp ->
+      unlines
+        [ indent <> "|- VVComplement"
+        , indent <> "|- verb: " <> v
+        , indent <> "\\- complement"
+        , renderVP (indent <> "   ") comp
+        ]
+    V2VComplement v obj comp ->
+      unlines
+        [ indent <> "|- V2VComplement"
+        , indent <> "|- verb: " <> v
+        , indent <> "|- object"
+        , renderNP (indent <> "   ") obj
+        , indent <> "\\- complement"
+        , renderVP (indent <> "   ") comp
+        ]
+    VSComplement v sentence ->
+      unlines
+        [ indent <> "|- VSComplement"
+        , indent <> "|- verb: " <> v
+        , indent <> "\\- clause"
+        , indentBlock (indent <> "   ") (renderSentenceTree sentence)
+        ]
     Copula adj ->
       unlines
         [ indent <> "|- Copula"
@@ -158,3 +181,7 @@ renderWhClause indent whClause =
         , indent <> "\\- verb"
         , renderVP (indent <> "   ") vp
         ]
+
+indentBlock ∷ String → String → String
+indentBlock prefix =
+  unlines . map (prefix <>) . lines

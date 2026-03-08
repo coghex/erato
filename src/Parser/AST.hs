@@ -69,6 +69,9 @@ data AdvPhrase
 data VerbPhrase
   = Intransitive String
   | Transitive String NounPhrase
+  | VVComplement String VerbPhrase
+  | V2VComplement String NounPhrase VerbPhrase
+  | VSComplement String Sentence
   | Copula String
   | Passive String
   | Progressive VerbPhrase

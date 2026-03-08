@@ -17,6 +17,7 @@ import qualified Test.ProperNouns as ProperNouns
 import qualified Test.Prepositions as Prepositions
 import qualified Test.RelativeClauses as RelativeClauses
 import qualified Test.Coordination as Coordination
+import qualified Test.Complements as Complements
 import qualified Test.Tense as Tense
 import qualified Test.Copula as Copula
 import qualified Test.MoreDeterminers as MoreDeterminers
@@ -44,6 +45,7 @@ main = do
       Prepositions.spec g
       RelativeClauses.spec g
       Coordination.spec g
+      Complements.spec g
       Tense.spec g
       Copula.spec g
       MoreDeterminers.spec g

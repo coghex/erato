@@ -87,12 +87,6 @@ parsePreferredFallbackSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredFallbackSentence bundle input =
   preferSentence (parseFallbackSentences bundle input)
 
-validParse ∷ Morpho → Expr → Bool
-validParse morpho expr =
-  case validatedSentence morpho expr of
-    Just _  → True
-    Nothing → False
-
 data NormalizedInput = NormalizedInput
   { normalizedInput        ∷ String
   , possessiveMarkerCount ∷ Int
@@ -161,6 +155,10 @@ nounPhrasePossessiveCount (CoordNP _ a b) =
 verbPhrasePossessiveCount ∷ VerbPhrase → Int
 verbPhrasePossessiveCount (Intransitive _) = 0
 verbPhrasePossessiveCount (Transitive _ np) = nounPhrasePossessiveCount np
+verbPhrasePossessiveCount (VVComplement _ vp) = verbPhrasePossessiveCount vp
+verbPhrasePossessiveCount (V2VComplement _ np vp) =
+  nounPhrasePossessiveCount np + verbPhrasePossessiveCount vp
+verbPhrasePossessiveCount (VSComplement _ sentence) = sentencePossessiveCount sentence
 verbPhrasePossessiveCount (Copula _) = 0
 verbPhrasePossessiveCount (Passive _) = 0
 verbPhrasePossessiveCount (Progressive vp) = verbPhrasePossessiveCount vp
@@ -263,6 +261,12 @@ verbPhraseLexicalPenalty ∷ VerbPhrase → Int
 verbPhraseLexicalPenalty (Intransitive verb) = functionWordPenalty verb
 verbPhraseLexicalPenalty (Transitive verb obj) =
   functionWordPenalty verb + nounPhraseLexicalPenalty obj
+verbPhraseLexicalPenalty (VVComplement verb vp) =
+  functionWordPenalty verb + verbPhraseLexicalPenalty vp
+verbPhraseLexicalPenalty (V2VComplement verb obj vp) =
+  functionWordPenalty verb + nounPhraseLexicalPenalty obj + verbPhraseLexicalPenalty vp
+verbPhraseLexicalPenalty (VSComplement verb sentence) =
+  functionWordPenalty verb + sentenceLexicalPenalty sentence
 verbPhraseLexicalPenalty (Copula adj) = functionWordPenalty adj
 verbPhraseLexicalPenalty (Passive verb) = functionWordPenalty verb
 verbPhraseLexicalPenalty (Progressive vp) = verbPhraseLexicalPenalty vp
@@ -274,6 +278,10 @@ verbPhraseLexicalPenalty (CoordVP _ a b) =
 verbPhraseBarePenalty ∷ VerbPhrase → Int
 verbPhraseBarePenalty (Intransitive _) = 0
 verbPhraseBarePenalty (Transitive _ obj) = nounPhraseBarePenalty obj
+verbPhraseBarePenalty (VVComplement _ vp) = verbPhraseBarePenalty vp
+verbPhraseBarePenalty (V2VComplement _ obj vp) =
+  nounPhraseBarePenalty obj + verbPhraseBarePenalty vp
+verbPhraseBarePenalty (VSComplement _ sentence) = sentenceBareNounPenalty sentence
 verbPhraseBarePenalty (Copula _) = 0
 verbPhraseBarePenalty (Passive _) = 0
 verbPhraseBarePenalty (Progressive vp) = verbPhraseBarePenalty vp

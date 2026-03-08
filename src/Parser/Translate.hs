@@ -246,6 +246,21 @@ parseV2 (Atom a)
   | Just base <- stripSuffix "_V2" a  = Just (base, BaseForm)
 parseV2 _ = Nothing
 
+parseVV ∷ SExp → Maybe String
+parseVV (Atom a)
+  | Just base <- stripSuffix "_VV" a = Just base
+parseVV _ = Nothing
+
+parseV2V ∷ SExp → Maybe String
+parseV2V (Atom a)
+  | Just base <- stripSuffix "_V2V" a = Just base
+parseV2V _ = Nothing
+
+parseVS ∷ SExp → Maybe String
+parseVS (Atom a)
+  | Just base <- stripSuffix "_VS" a = Just base
+parseVS _ = Nothing
+
 parseA ∷ SExp → Maybe String
 parseA (Atom a)
   | Just base <- stripSuffix "_A" a = Just base
@@ -280,6 +295,9 @@ skipAgreement ∷ VerbPhrase → Bool
 skipAgreement (Copula _) = True
 skipAgreement (Passive _) = True
 skipAgreement (Progressive _) = True
+skipAgreement (VVComplement _ _) = True
+skipAgreement (V2VComplement _ _ _) = True
+skipAgreement (VSComplement _ _) = True
 skipAgreement _ = False
 
 questionAgreementOk ∷ VerbPhrase → VerbForm → Bool
@@ -386,6 +404,19 @@ parseVP (List [Atom "AdvVP", vp, adv]) = do
   (baseVP, vf) <- parseVP vp
   advp <- parseAdv adv
   pure (VPWithAdv baseVP advp, vf)
+parseVP (List [Atom "ComplVV", vv, vp]) = do
+  verb <- parseVV vv
+  (compVP, _) <- parseVP vp
+  pure (VVComplement verb compVP, BaseForm)
+parseVP (List [Atom "ComplV2V", v2v, np, vp]) = do
+  verb <- parseV2V v2v
+  obj <- parseNP Objective np
+  (compVP, _) <- parseVP vp
+  pure (V2VComplement verb obj compVP, BaseForm)
+parseVP (List [Atom "ComplVS", vs, s]) = do
+  verb <- parseVS vs
+  clause <- parseSentence s
+  pure (VSComplement verb clause, BaseForm)
 parseVP (List [Atom "UseV", v]) = do
   (lemma, vf) <- parseV v
   pure (Intransitive lemma, vf)
@@ -430,10 +461,23 @@ renderVP (CoordVP c a b) =
   unwords [renderVP a, renderConj c, renderVP b]
 renderVP (Intransitive v) = fantasyToken v
 renderVP (Transitive v obj) = unwords [fantasyToken v, renderNP obj]
+renderVP (VVComplement v vp) =
+  unwords [fantasyToken v, renderInfinitiveVP vp]
+renderVP (V2VComplement v obj vp) =
+  unwords [fantasyToken v, renderNP obj, renderInfinitiveVP vp]
+renderVP (VSComplement v sentence) =
+  unwords [fantasyToken v, fantasyToken "that", renderEmbeddedSentence sentence]
 renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
 renderVP (Passive v) = unwords [fantasyToken "be", fantasyToken v]
 renderVP (Progressive vp) = unwords [fantasyToken "be", renderVP vp]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
+
+renderInfinitiveVP ∷ VerbPhrase → String
+renderInfinitiveVP vp =
+  unwords [fantasyToken "to", renderVP vp]
+
+renderEmbeddedSentence ∷ Sentence → String
+renderEmbeddedSentence = translateSentence
 
 renderWhClause ∷ WhClause → String
 renderWhClause (SubjectWh qword vp) =
