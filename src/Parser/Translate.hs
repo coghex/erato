@@ -179,6 +179,7 @@ parsePron ∷ SExp → Maybe (Person, Number)
 parsePron (Atom "i_Pron")    = Just (First, Singular)
 parsePron (Atom "we_Pron")   = Just (First, Plural)
 parsePron (Atom "you_Pron")  = Just (Second, Singular)
+parsePron (Atom "youPl_Pron") = Just (Second, Plural)
 parsePron (Atom "he_Pron")   = Just (Third, Singular)
 parsePron (Atom "she_Pron")  = Just (Third, Singular)
 parsePron (Atom "it_Pron")   = Just (Third, Singular)
@@ -204,9 +205,16 @@ agreementOk Present Positive subj vform =
     (True, ThirdSingular) -> True
     (False, BaseForm)     -> True
     _                     -> False
+-- Once English tense is expressed with do-support or a tense auxiliary, the
+-- lexical verb is expected to stay in the base form.
 agreementOk Present Negative _ vform =
   vform == BaseForm
-agreementOk _ _ _ _ = True
+-- Past and future forms are already encoded in the surrounding GF structure,
+-- so the lexical verb shape does not vary with the subject in this AST.
+agreementOk Past Positive _ _ = True
+agreementOk Past Negative _ _ = True
+agreementOk Future Positive _ _ = True
+agreementOk Future Negative _ _ = True
 
 translateSentence ∷ Sentence → String
 translateSentence (Sentence t p subj vp) =

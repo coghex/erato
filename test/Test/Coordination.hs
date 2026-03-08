@@ -40,6 +40,16 @@ spec grammars = describe "Coordination" $ do
           (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
           (Intransitive "run"))
 
+  it "parses coordinated verbs with object second: the dog runs and eats the food" $ do
+    let exprs = parseControlled grammars "the dog runs and eats the food"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (CoordVP And
+          (Intransitive "run")
+          (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing)))
+
   it "parses or-coordinated subjects: the man or the woman run" $ do
     let exprs = parseControlled grammars "the man or the woman run"
     shouldParse exprs
@@ -59,3 +69,13 @@ spec grammars = describe "Coordination" $ do
         (CoordVP Or
           (Intransitive "run")
           (Intransitive "eat"))
+
+  it "parses coordinated plural subjects with transitive verb: the dog and the cat eat the food" $ do
+    let exprs = parseControlled grammars "the dog and the cat eat the food"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CoordNP And
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (CommonNoun (Just "the") [] "cat" Singular Nothing))
+        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))

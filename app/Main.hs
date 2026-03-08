@@ -2,11 +2,10 @@
 
 module Main where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (forkIO)
 import Data.IORef
 import System.IO (hFlush, stdout)
 
-import PGF (languages, showExpr)
 import Engine.Core.Queue
 import Parser.AST
 import Parser.GFParser
@@ -32,8 +31,8 @@ main = do
   q <- newQueue
   lastAstRef <- newIORef Nothing
 
-  _ <- forkIO (processLoop grammars lastAstRef q)
-  inputLoop q
+  _ <- forkIO (inputLoop q)
+  processLoop grammars lastAstRef q
 
 inputLoop ∷ Queue Command → IO ()
 inputLoop q = do
@@ -50,43 +49,31 @@ processLoop ∷ GrammarBundle → IORef (Maybe Sentence) → Queue Command → I
 processLoop grammars lastAstRef q = go
   where
     go = do
-      m <- tryReadQueue q
-      case m of
-        Nothing -> threadDelay 10000 >> go
-        Just Quit -> putStrLn "Bye."
-        Just ShowAst -> do
+      command <- readQueue q
+      case command of
+        Quit -> putStrLn "Bye."
+        ShowAst -> do
           mAst <- readIORef lastAstRef
           case mAst of
             Nothing -> putStrLn "[info] no AST available yet"
             Just ast -> putStrLn (renderSentenceTree ast)
           go
-        Just (TranslateSentence s) -> do
-          let controlled = parseControlled grammars s
-          case controlled of
-            (e:_) ->
-              case exprToSentence e of
-                Just ast -> do
-                  writeIORef lastAstRef (Just ast)
-                  putStrLn ("[ok] " <> translateSentence ast)
-                Nothing  -> do
-                  putStrLn "[warn] controlled parse succeeded but AST conversion failed — using fallback"
-                  fallback s
-            [] -> do
-              putStrLn "[warn] controlled parse failed (0 parses) — using fallback"
+        TranslateSentence s -> do
+          case parsePreferredControlledSentence grammars s of
+            Just ast -> do
+              writeIORef lastAstRef (Just ast)
+              putStrLn ("[ok] " <> translateSentence ast)
+            Nothing -> do
+              putStrLn "[warn] controlled parse failed (0 accepted parses) — using fallback"
               fallback s
           go
 
     fallback s = do
-      let fall = parseFallbackAllEng grammars s
-      case fall of
-        (e:_) ->
-          case exprToSentence e of
-            Just ast -> do
-              writeIORef lastAstRef (Just ast)
-              putStrLn ("[fallback] " <> translateSentence ast)
-            Nothing ->
-              putStrLn ("[fallback] " <> translateFallback s)
-        [] ->
+      case parsePreferredFallbackSentence grammars s of
+        Just ast -> do
+          writeIORef lastAstRef (Just ast)
+          putStrLn ("[fallback] " <> translateSentence ast)
+        Nothing ->
           putStrLn ("[fallback] " <> translateFallback s)
 
 stripQuotes ∷ String → String

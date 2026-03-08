@@ -74,6 +74,14 @@ spec grammars = describe "Pronouns" $ do
         (Pronoun Second Singular Subjective)
         (Intransitive "run")
 
+  it "parses plural-you subject: you run" $ do
+    let exprs = parseControlled grammars "you run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Second Plural Subjective)
+        (Intransitive "run")
+
   it "parses pronoun object: the dog eats me" $ do
     let exprs = parseControlled grammars "the dog eats me"
     shouldParse exprs
@@ -97,3 +105,11 @@ spec grammars = describe "Pronouns" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Transitive "eat" (Pronoun Third Singular Objective))
+
+  it "parses plural-you object: the dog eats you" $ do
+    let exprs = parseControlled grammars "the dog eats you"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Transitive "eat" (Pronoun Second Plural Objective))

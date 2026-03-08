@@ -73,3 +73,19 @@ spec grammars = describe "Tense" $ do
       Sentence Future Negative
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
+
+  it "prefers the future parse for: the dog will run" $ do
+    parsePreferredControlledSentence grammars "the dog will run"
+      `shouldBe`
+        Just
+          (Sentence Future Positive
+            (CommonNoun (Just "the") [] "dog" Singular Nothing)
+            (Intransitive "run"))
+
+  it "prefers the future parse for: I will run" $ do
+    parsePreferredControlledSentence grammars "I will run"
+      `shouldBe`
+        Just
+          (Sentence Future Positive
+            (Pronoun First Singular Subjective)
+            (Intransitive "run"))

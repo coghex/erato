@@ -33,3 +33,19 @@ spec grammars = describe "Agreement" $ do
   it "rejects mismatch: the dog run" $ do
     let exprs = parseControlled grammars "the dog run"
     shouldReject exprs
+
+  it "allows past-tense singular without extra agreement changes: the dog ran" $ do
+    let exprs = parseControlled grammars "the dog ran"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "allows future-tense plural without extra agreement changes: the dogs will run" $ do
+    let exprs = parseControlled grammars "the dogs will run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Future Positive
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
+        (Intransitive "run")
