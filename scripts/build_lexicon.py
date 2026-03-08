@@ -13,6 +13,25 @@ STOPLIST = {
     "its","our","their","mine","yours","hers","ours","theirs","some"
 }
 
+STRUCTURAL_LEMMAS = {
+    # Grammar-supplied function words and relation markers.
+    "and","or","but","if","as",
+    "in","on","with","under","to","from","for","by","before","after",
+    "not","no","there","who","that",
+}
+
+AUXILIARY_LEMMAS = {
+    # Closed-class verbal material that should not be regenerated as ordinary
+    # lexical nouns/verbs; these create unwanted ambiguities like
+    # "the dog will run" being read as a present-tense transitive clause.
+    "be","am","is","are","was","were","been","being",
+    "do","does","did","done","doing",
+    "have","has","had",
+    "will","would","can","could","shall","should","may","might","must",
+}
+
+BLOCKED_LEMMAS = STOPLIST | STRUCTURAL_LEMMAS | AUXILIARY_LEMMAS
+
 SINGULAR_S_NOUNS = {
     "news","series","species","physics","mathematics","economics","politics","ethics",
     "aerobics","measles","mumps","gymnastics","electronics"
@@ -49,7 +68,7 @@ def normalize_lemma(lemma: str) -> str | None:
         return None
     if not LEMMA_RE.match(lemma):
         return None
-    if lemma in STOPLIST:
+    if lemma in BLOCKED_LEMMAS:
         return None
     return lemma
 
