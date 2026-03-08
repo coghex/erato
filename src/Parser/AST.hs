@@ -51,7 +51,9 @@ data NounPhrase
 
 data RelClause
   = RelVP VerbPhrase
+  | NegRelVP VerbPhrase
   | RelV2 String NounPhrase
+  | NegRelV2 String NounPhrase
   deriving (Eq, Show)
 
 data AdvPhrase
@@ -75,6 +77,7 @@ data Sentence
     , subject  ∷ NounPhrase
     , verb     ∷ VerbPhrase
     }
+  | Question Tense Polarity NounPhrase VerbPhrase
   | Existential Tense Polarity NounPhrase
   | Imperative Polarity VerbPhrase
   deriving (Eq, Show)

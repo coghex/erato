@@ -34,6 +34,42 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "that") [] "dog" Singular Nothing)
         (Intransitive "run")
 
+  it "parses these: these dogs run" $ do
+    let exprs = parseControlled grammars "these dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "these") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "parses those: those dogs run" $ do
+    let exprs = parseControlled grammars "those dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "those") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "parses possessive determiner singular: my dog runs" $ do
+    let exprs = parseControlled grammars "my dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "my") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses possessive determiner plural: their dogs run" $ do
+    let exprs = parseControlled grammars "their dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "their") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "rejects plural demonstrative with singular noun: these dog run" $ do
+    let exprs = parseControlled grammars "these dog run"
+    shouldReject exprs
+
   it "rejects every with plural: every dogs run" $ do
     let exprs = parseControlled grammars "every dogs run"
     shouldReject exprs

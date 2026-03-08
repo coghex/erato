@@ -108,11 +108,13 @@ sentenceFormPenalty _                = 0
 
 sentenceLexicalPenalty ∷ Sentence → Int
 sentenceLexicalPenalty (Sentence _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
+sentenceLexicalPenalty (Question _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
 sentenceLexicalPenalty (Existential _ _ np)   = nounPhraseLexicalPenalty np
 sentenceLexicalPenalty (Imperative _ vp)      = verbPhraseLexicalPenalty vp
 
 sentenceBareNounPenalty ∷ Sentence → Int
 sentenceBareNounPenalty (Sentence _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
+sentenceBareNounPenalty (Question _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
 sentenceBareNounPenalty (Existential _ _ np)   = nounPhraseBarePenalty np
 sentenceBareNounPenalty (Imperative _ vp)      = verbPhraseBarePenalty vp
 
@@ -167,11 +169,15 @@ advPhraseBarePenalty (PrepPhrase _ np) = nounPhraseBarePenalty np
 
 relClausePenalty ∷ RelClause → Int
 relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp
+relClausePenalty (NegRelVP vp) = verbPhraseLexicalPenalty vp
 relClausePenalty (RelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
+relClausePenalty (NegRelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
 
 relClauseBarePenalty ∷ RelClause → Int
 relClauseBarePenalty (RelVP vp) = verbPhraseBarePenalty vp
+relClauseBarePenalty (NegRelVP vp) = verbPhraseBarePenalty vp
 relClauseBarePenalty (RelV2 _ np) = nounPhraseBarePenalty np
+relClauseBarePenalty (NegRelV2 _ np) = nounPhraseBarePenalty np
 
 functionWordPenalty ∷ String → Int
 functionWordPenalty word

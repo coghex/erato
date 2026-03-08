@@ -42,6 +42,8 @@ data VerbForm = BaseForm | ThirdSingular
 parseSentence ∷ SExp → Maybe Sentence
 parseSentence (List [Atom "UttS", s]) =
   parseSentence s
+parseSentence (List [Atom "UttQS", qs]) =
+  parseQuestion qs
 parseSentence (List [Atom "UttImp", p, imp]) = do
   polarity' <- parsePolarity p
   (vp, _) <- parseImp imp
@@ -62,6 +64,16 @@ parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
     then pure (Sentence tense' polarity' subj (CoordVP c v1 v2))
     else Nothing
 parseSentence _ = Nothing
+
+parseQuestion ∷ SExp → Maybe Sentence
+parseQuestion (List [Atom "MkQS", t, p, cl]) = do
+  tense' <- parseTense t
+  polarity' <- parsePolarity p
+  (subj, vp, vform) <- parseCl cl
+  if questionAgreementOk vp vform
+    then pure (Question tense' polarity' subj vp)
+    else Nothing
+parseQuestion _ = Nothing
 
 parseClAsSentence ∷ Tense → Polarity → SExp → Maybe Sentence
 parseClAsSentence tense' polarity' (List [Atom "ExistPred", np]) = do
@@ -117,11 +129,20 @@ parseRelClause (List [Atom "RelVP", rp, vp]) = do
   _ <- parseRP rp
   (vps, _) <- parseVP vp
   pure (RelVP vps)
+parseRelClause (List [Atom "NegRelVP", rp, vp]) = do
+  _ <- parseRP rp
+  (vps, _) <- parseVP vp
+  pure (NegRelVP vps)
 parseRelClause (List [Atom "RelV2", rp, np, v2]) = do
   _ <- parseRP rp
   subj <- parseNP Subjective np
   (lemma, _) <- parseV2 v2
   pure (RelV2 lemma subj)
+parseRelClause (List [Atom "NegRelV2", rp, np, v2]) = do
+  _ <- parseRP rp
+  subj <- parseNP Subjective np
+  (lemma, _) <- parseV2 v2
+  pure (NegRelV2 lemma subj)
 parseRelClause _ = Nothing
 
 parseAdv ∷ SExp → Maybe AdvPhrase
@@ -149,6 +170,22 @@ parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
 parseDetInfo (Atom "every_Det") = Just ("every", Just Singular)
 parseDetInfo (Atom "this_Det")  = Just ("this", Just Singular)
 parseDetInfo (Atom "that_Det")  = Just ("that", Just Singular)
+parseDetInfo (Atom "these_Det") = Just ("these", Just Plural)
+parseDetInfo (Atom "those_Det") = Just ("those", Just Plural)
+parseDetInfo (Atom "my_Det")    = Just ("my", Just Singular)
+parseDetInfo (Atom "myPl_Det")  = Just ("my", Just Plural)
+parseDetInfo (Atom "your_Det")  = Just ("your", Just Singular)
+parseDetInfo (Atom "yourPl_Det") = Just ("your", Just Plural)
+parseDetInfo (Atom "his_Det")   = Just ("his", Just Singular)
+parseDetInfo (Atom "hisPl_Det") = Just ("his", Just Plural)
+parseDetInfo (Atom "her_Det")   = Just ("her", Just Singular)
+parseDetInfo (Atom "herPl_Det") = Just ("her", Just Plural)
+parseDetInfo (Atom "its_Det")   = Just ("its", Just Singular)
+parseDetInfo (Atom "itsPl_Det") = Just ("its", Just Plural)
+parseDetInfo (Atom "our_Det")   = Just ("our", Just Singular)
+parseDetInfo (Atom "ourPl_Det") = Just ("our", Just Plural)
+parseDetInfo (Atom "their_Det") = Just ("their", Just Singular)
+parseDetInfo (Atom "theirPl_Det") = Just ("their", Just Plural)
 parseDetInfo _                  = Nothing
 
 parseV ∷ SExp → Maybe (String, VerbForm)
@@ -199,6 +236,10 @@ skipAgreement (Passive _) = True
 skipAgreement (Progressive _) = True
 skipAgreement _ = False
 
+questionAgreementOk ∷ VerbPhrase → VerbForm → Bool
+questionAgreementOk vp vform =
+  skipAgreement vp || vform == BaseForm
+
 agreementOk ∷ Tense → Polarity → NounPhrase → VerbForm → Bool
 agreementOk Present Positive subj vform =
   case (isThirdSingular subj, vform) of
@@ -220,6 +261,14 @@ translateSentence ∷ Sentence → String
 translateSentence (Sentence t p subj vp) =
   unwords
     [ renderTense t
+    , renderPolarity p
+    , renderNP subj
+    , renderVP vp
+    ]
+translateSentence (Question t p subj vp) =
+  unwords
+    [ fantasyToken "question"
+    , renderTense t
     , renderPolarity p
     , renderNP subj
     , renderVP vp
@@ -335,8 +384,12 @@ renderPolarity Negative = "no"
 renderRelClause ∷ RelClause → String
 renderRelClause (RelVP vp) =
   unwords [fantasyToken "who", renderVP vp]
+renderRelClause (NegRelVP vp) =
+  unwords [fantasyToken "who", fantasyToken "not", renderVP vp]
 renderRelClause (RelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken v, renderNP obj]
+renderRelClause (NegRelV2 v obj) =
+  unwords [fantasyToken "that", fantasyToken "not", fantasyToken v, renderNP obj]
 
 renderAdv ∷ AdvPhrase → String
 renderAdv (PrepPhrase prep np) =

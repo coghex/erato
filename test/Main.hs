@@ -25,6 +25,7 @@ import qualified Test.Passive as Passive
 import qualified Test.Progressive as Progressive
 import qualified Test.Existential as Existential
 import qualified Test.Imperative as Imperative
+import qualified Test.Questions as Questions
 
 main ∷ IO ()
 main = do
@@ -50,4 +51,5 @@ main = do
       Progressive.spec g
       Existential.spec g
       Imperative.spec g
+      Questions.spec g
       Invalid.spec g

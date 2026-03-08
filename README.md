@@ -73,8 +73,8 @@ mkTemp t ASimul used for VPS
 ### ☐ To implement
 - [ ] Proper‑noun inference at runtime
 - [ ] Additional verb tenses (past/perfect)
-- [ ] Question forms
-- [ ] negation inside RCs (e.g., “the dog that does not run is big”)
-- [ ] possessives
+- [x] Question forms
+- [x] negation inside RCs (e.g., “the dog that does not run is big”)
+- [x] possessives
 - [ ] quantifiers (e.g., “every dog runs”)
 ```

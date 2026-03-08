@@ -17,6 +17,16 @@ renderSentenceTree (Sentence t p subj vp) =
     , "\\- verb"
     , renderVP "   " vp
     ]
+renderSentenceTree (Question t p subj vp) =
+  unlines
+    [ "Question"
+    , "|- tense: " <> show t
+    , "|- polarity: " <> show p
+    , "|- subject"
+    , renderNP "   " subj
+    , "\\- verb"
+    , renderVP "   " vp
+    ]
 renderSentenceTree (Existential t p np) =
   unlines
     [ "Existential"

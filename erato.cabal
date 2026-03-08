@@ -59,13 +59,14 @@ test-suite erato-tests
                     , Test.MoreDeterminers
                     , Test.MorePrepositions
                     , Test.Negation
-                    , Test.Passive
-                    , Test.Prepositions
-                    , Test.Progressive
-                    , Test.Pronouns
-                    , Test.ProperNouns
-                    , Test.RelativeClauses
-                    , Test.Tense
+                     , Test.Passive
+                     , Test.Prepositions
+                     , Test.Progressive
+                     , Test.Pronouns
+                     , Test.ProperNouns
+                     , Test.Questions
+                     , Test.RelativeClauses
+                     , Test.Tense
     build-depends:    base
                     , directory
                     , erato

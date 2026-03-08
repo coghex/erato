@@ -66,3 +66,30 @@ spec grammars = describe "Relative clauses" $ do
         (CommonNoun (Just "the") ["red"] "dog" Singular
           (Just (RelV2 "see" (CommonNoun (Just "the") [] "man" Singular Nothing))))
         (Intransitive "run")
+
+  it "parses negated subject relative: the dog that does not run is big" $ do
+    let exprs = parseControlled grammars "the dog that does not run is big"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular
+          (Just (NegRelVP (Intransitive "run"))))
+        (Copula "big")
+
+  it "parses negated object relative: the dog that the woman does not see runs" $ do
+    let exprs = parseControlled grammars "the dog that the woman does not see runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular
+          (Just (NegRelV2 "see" (CommonNoun (Just "the") [] "woman" Singular Nothing))))
+        (Intransitive "run")
+
+  it "parses negated copula relative: the dog that is not big runs" $ do
+    let exprs = parseControlled grammars "the dog that is not big runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular
+          (Just (NegRelVP (Copula "big"))))
+        (Intransitive "run")
