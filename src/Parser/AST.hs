@@ -62,13 +62,19 @@ data VerbPhrase
   = Intransitive String
   | Transitive String NounPhrase
   | Copula String
+  | Passive String
+  | Progressive VerbPhrase
   | VPWithAdv VerbPhrase AdvPhrase
   | CoordVP Conj VerbPhrase VerbPhrase
   deriving (Eq, Show)
 
-data Sentence = Sentence
-  { tense    ∷ Tense
-  , polarity ∷ Polarity
-  , subject  ∷ NounPhrase
-  , verb     ∷ VerbPhrase
-  } deriving (Eq, Show)
+data Sentence
+  = Sentence
+    { tense    ∷ Tense
+    , polarity ∷ Polarity
+    , subject  ∷ NounPhrase
+    , verb     ∷ VerbPhrase
+    }
+  | Existential Tense Polarity NounPhrase
+  | Imperative Polarity VerbPhrase
+  deriving (Eq, Show)

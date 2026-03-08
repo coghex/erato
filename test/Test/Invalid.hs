@@ -29,8 +29,8 @@ spec grammars = describe "Invalid sentences" $ do
     let exprs = parseControlled grammars "the dog run"
     shouldReject exprs
 
-  it "rejects nonsense: runs the dog" $ do
-    let exprs = parseControlled grammars "runs the dog"
+  it "rejects double determiner: the the dog runs" $ do
+    let exprs = parseControlled grammars "the the dog runs"
     shouldReject exprs
 
   it "rejects empty input" $ do

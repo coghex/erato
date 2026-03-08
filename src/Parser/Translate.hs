@@ -42,13 +42,14 @@ data VerbForm = BaseForm | ThirdSingular
 parseSentence ∷ SExp → Maybe Sentence
 parseSentence (List [Atom "UttS", s]) =
   parseSentence s
+parseSentence (List [Atom "UttImp", p, imp]) = do
+  polarity' <- parsePolarity p
+  (vp, _) <- parseImp imp
+  pure (Imperative polarity' vp)
 parseSentence (List [Atom "MkS", t, p, cl]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
-  (subj, vp, vform) <- parseCl cl
-  if isCopula vp || agreementOk tense' polarity' subj vform
-    then pure (Sentence tense' polarity' subj vp)
-    else Nothing
+  parseClAsSentence tense' polarity' cl
 parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
@@ -61,6 +62,20 @@ parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
     then pure (Sentence tense' polarity' subj (CoordVP c v1 v2))
     else Nothing
 parseSentence _ = Nothing
+
+parseClAsSentence ∷ Tense → Polarity → SExp → Maybe Sentence
+parseClAsSentence tense' polarity' (List [Atom "ExistPred", np]) = do
+  obj <- parseNP Objective np
+  pure (Existential tense' polarity' obj)
+parseClAsSentence tense' polarity' cl = do
+  (subj, vp, vform) <- parseCl cl
+  if skipAgreement vp || agreementOk tense' polarity' subj vform
+    then pure (Sentence tense' polarity' subj vp)
+    else Nothing
+
+parseImp ∷ SExp → Maybe (VerbPhrase, VerbForm)
+parseImp (List [Atom "MkImp", vp]) = parseVP vp
+parseImp _ = Nothing
 
 parseTense ∷ SExp → Maybe Tense
 parseTense (Atom "TPres") = Just Present
@@ -177,9 +192,11 @@ stripSuffix suffix s =
        then Just (take n s)
        else Nothing
 
-isCopula ∷ VerbPhrase → Bool
-isCopula (Copula _) = True
-isCopula _ = False
+skipAgreement ∷ VerbPhrase → Bool
+skipAgreement (Copula _) = True
+skipAgreement (Passive _) = True
+skipAgreement (Progressive _) = True
+skipAgreement _ = False
 
 agreementOk ∷ Tense → Polarity → NounPhrase → VerbForm → Bool
 agreementOk Present Positive subj vform =
@@ -192,12 +209,24 @@ agreementOk Present Negative _ vform =
 agreementOk _ _ _ _ = True
 
 translateSentence ∷ Sentence → String
-translateSentence s =
+translateSentence (Sentence t p subj vp) =
   unwords
-    [ renderTense (tense s)
-    , renderPolarity (polarity s)
-    , renderNP (subject s)
-    , renderVP (verb s)
+    [ renderTense t
+    , renderPolarity p
+    , renderNP subj
+    , renderVP vp
+    ]
+translateSentence (Existential t p np) =
+  unwords
+    [ renderTense t
+    , renderPolarity p
+    , fantasyToken "there"
+    , renderNP np
+    ]
+translateSentence (Imperative p vp) =
+  unwords
+    [ renderPolarity p
+    , renderVP vp
     ]
 
 translateFallback ∷ String → String
@@ -241,6 +270,12 @@ parseVP (List [Atom "UseV2", v2, np]) = do
 parseVP (List [Atom "UseAP", a]) = do
   adj <- parseA a
   pure (Copula adj, ThirdSingular)
+parseVP (List [Atom "PassV2VP", v2]) = do
+  (lemma, _) <- parseV2 v2
+  pure (Passive lemma, BaseForm)
+parseVP (List [Atom "ProgressVP", vp]) = do
+  (baseVP, _) <- parseVP vp
+  pure (Progressive baseVP, BaseForm)
 parseVP _ = Nothing
 
 parseConj ∷ SExp → Maybe Conj
@@ -265,6 +300,8 @@ renderVP (CoordVP c a b) =
 renderVP (Intransitive v) = fantasyToken v
 renderVP (Transitive v obj) = unwords [fantasyToken v, renderNP obj]
 renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
+renderVP (Passive v) = unwords [fantasyToken "be", fantasyToken v]
+renderVP (Progressive vp) = unwords [fantasyToken "be", renderVP vp]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
 
 renderConj ∷ Conj → String

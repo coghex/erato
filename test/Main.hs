@@ -21,6 +21,10 @@ import qualified Test.Tense as Tense
 import qualified Test.Copula as Copula
 import qualified Test.MoreDeterminers as MoreDeterminers
 import qualified Test.MorePrepositions as MorePrepositions
+import qualified Test.Passive as Passive
+import qualified Test.Progressive as Progressive
+import qualified Test.Existential as Existential
+import qualified Test.Imperative as Imperative
 
 main ∷ IO ()
 main = do
@@ -42,4 +46,8 @@ main = do
       Copula.spec g
       MoreDeterminers.spec g
       MorePrepositions.spec g
+      Passive.spec g
+      Progressive.spec g
+      Existential.spec g
+      Imperative.spec g
       Invalid.spec g

@@ -7,15 +7,30 @@ module Parser.Pretty
 import Parser.AST
 
 renderSentenceTree ∷ Sentence → String
-renderSentenceTree s =
+renderSentenceTree (Sentence t p subj vp) =
   unlines
     [ "Sentence"
-    , "|- tense: " <> show (tense s)
-    , "|- polarity: " <> show (polarity s)
+    , "|- tense: " <> show t
+    , "|- polarity: " <> show p
     , "|- subject"
-    , renderNP "   " (subject s)
+    , renderNP "   " subj
     , "\\- verb"
-    , renderVP "   " (verb s)
+    , renderVP "   " vp
+    ]
+renderSentenceTree (Existential t p np) =
+  unlines
+    [ "Existential"
+    , "|- tense: " <> show t
+    , "|- polarity: " <> show p
+    , "\\- noun"
+    , renderNP "   " np
+    ]
+renderSentenceTree (Imperative p vp) =
+  unlines
+    [ "Imperative"
+    , "|- polarity: " <> show p
+    , "\\- verb"
+    , renderVP "   " vp
     ]
 
 renderNP ∷ String → NounPhrase → String
@@ -68,6 +83,16 @@ renderVP indent vp =
       unlines
         [ indent <> "|- Copula"
         , indent <> "\\- " <> adj
+        ]
+    Passive v ->
+      unlines
+        [ indent <> "|- Passive"
+        , indent <> "\\- " <> v
+        ]
+    Progressive base ->
+      unlines
+        [ indent <> "|- Progressive"
+        , renderVP (indent <> "   ") base
         ]
     VPWithAdv base adv ->
       unlines
