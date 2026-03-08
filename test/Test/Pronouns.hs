@@ -41,3 +41,59 @@ spec grammars = describe "Pronouns" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") [] "man" Singular Nothing)
         (Transitive "eat" (Pronoun Third Singular Objective))
+
+  it "parses pronoun subject: he runs" $ do
+    let exprs = parseControlled grammars "he runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Third Singular Subjective)
+        (Intransitive "run")
+
+  it "parses pronoun subject: she runs" $ do
+    let exprs = parseControlled grammars "she runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Third Singular Subjective)
+        (Intransitive "run")
+
+  it "parses pronoun subject: it runs" $ do
+    let exprs = parseControlled grammars "it runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Third Singular Subjective)
+        (Intransitive "run")
+
+  it "parses pronoun subject: you run" $ do
+    let exprs = parseControlled grammars "you run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Second Singular Subjective)
+        (Intransitive "run")
+
+  it "parses pronoun object: the dog eats me" $ do
+    let exprs = parseControlled grammars "the dog eats me"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Transitive "eat" (Pronoun First Singular Objective))
+
+  it "parses pronoun object: the dog eats us" $ do
+    let exprs = parseControlled grammars "the dog eats us"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Transitive "eat" (Pronoun First Plural Objective))
+
+  it "parses pronoun object: the dog eats him" $ do
+    let exprs = parseControlled grammars "the dog eats him"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Transitive "eat" (Pronoun Third Singular Objective))

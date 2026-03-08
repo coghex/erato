@@ -78,9 +78,16 @@ processLoop grammars lastAstRef q = go
 
     fallback s = do
       let fall = parseFallbackAllEng grammars s
-      if null fall
-        then putStrLn ("[fallback] " <> translateFallback s)
-        else putStrLn ("[fallback] " <> translateFallback s)
+      case fall of
+        (e:_) ->
+          case exprToSentence e of
+            Just ast -> do
+              writeIORef lastAstRef (Just ast)
+              putStrLn ("[fallback] " <> translateSentence ast)
+            Nothing ->
+              putStrLn ("[fallback] " <> translateFallback s)
+        [] ->
+          putStrLn ("[fallback] " <> translateFallback s)
 
 stripQuotes ∷ String → String
 stripQuotes s =

@@ -46,7 +46,7 @@ parseSentence (List [Atom "MkS", t, p, cl]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
   (subj, vp, vform) <- parseCl cl
-  if agreementOk tense' polarity' subj vform
+  if isCopula vp || agreementOk tense' polarity' subj vform
     then pure (Sentence tense' polarity' subj vp)
     else Nothing
 parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
@@ -131,6 +131,9 @@ parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
 parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
 parseDetInfo (Atom "thePl_Det") = Just ("the", Just Plural)
 parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
+parseDetInfo (Atom "every_Det") = Just ("every", Just Singular)
+parseDetInfo (Atom "this_Det")  = Just ("this", Just Singular)
+parseDetInfo (Atom "that_Det")  = Just ("that", Just Singular)
 parseDetInfo _                  = Nothing
 
 parseV ∷ SExp → Maybe (String, VerbForm)
@@ -174,6 +177,10 @@ stripSuffix suffix s =
        then Just (take n s)
        else Nothing
 
+isCopula ∷ VerbPhrase → Bool
+isCopula (Copula _) = True
+isCopula _ = False
+
 agreementOk ∷ Tense → Polarity → NounPhrase → VerbForm → Bool
 agreementOk Present Positive subj vform =
   case (isThirdSingular subj, vform) of
@@ -198,10 +205,10 @@ translateFallback input =
   unwords (map fantasyToken (words input))
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
-parseNP _ (List [Atom "ConjNP", conj, np1, np2]) = do
+parseNP cas (List [Atom "ConjNP", conj, np1, np2]) = do
   c <- parseConj conj
-  n1 <- parseNP Subjective np1
-  n2 <- parseNP Subjective np2
+  n1 <- parseNP cas np1
+  n2 <- parseNP cas np2
   pure (CoordNP c n1 n2)
 parseNP _ (List [Atom "DetCN", det, n]) = do
   (detText, detNum) <- parseDetInfo det
@@ -231,6 +238,9 @@ parseVP (List [Atom "UseV2", v2, np]) = do
   (lemma, vf) <- parseV2 v2
   obj <- parseNP Objective np
   pure (Transitive lemma obj, vf)
+parseVP (List [Atom "UseAP", a]) = do
+  adj <- parseA a
+  pure (Copula adj, ThirdSingular)
 parseVP _ = Nothing
 
 parseConj ∷ SExp → Maybe Conj
@@ -244,7 +254,7 @@ renderNP (CoordNP c a b) =
 renderNP (ProperNoun s) = fantasyToken s
 renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
 renderNP (CommonNoun det adjs noun _ rel) =
-  let base = unwords (map fantasyToken (maybe [] pure det ++ reverse adjs ++ [noun]))
+  let base = unwords (map fantasyToken (maybe [] pure det ++ adjs ++ [noun]))
   in case rel of
        Nothing -> base
        Just rc -> unwords [base, renderRelClause rc]
@@ -254,6 +264,7 @@ renderVP (CoordVP c a b) =
   unwords [renderVP a, renderConj c, renderVP b]
 renderVP (Intransitive v) = fantasyToken v
 renderVP (Transitive v obj) = unwords [fantasyToken v, renderNP obj]
+renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
 
 renderConj ∷ Conj → String
@@ -320,7 +331,7 @@ parseMany ∷ [Token] → Maybe ([SExp], [Token])
 parseMany = go []
   where
     go acc [] = Just (reverse acc, [])
-    go acc (TokRParen:_) = Nothing
+    go _   (TokRParen:_) = Nothing
     go acc ts = do
       (sexp, rest) <- parseOne ts
       go (sexp:acc) rest

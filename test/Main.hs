@@ -17,6 +17,10 @@ import qualified Test.ProperNouns as ProperNouns
 import qualified Test.Prepositions as Prepositions
 import qualified Test.RelativeClauses as RelativeClauses
 import qualified Test.Coordination as Coordination
+import qualified Test.Tense as Tense
+import qualified Test.Copula as Copula
+import qualified Test.MoreDeterminers as MoreDeterminers
+import qualified Test.MorePrepositions as MorePrepositions
 
 main ∷ IO ()
 main = do
@@ -34,4 +38,8 @@ main = do
       Prepositions.spec g
       RelativeClauses.spec g
       Coordination.spec g
+      Tense.spec g
+      Copula.spec g
+      MoreDeterminers.spec g
+      MorePrepositions.spec g
       Invalid.spec g

@@ -8,7 +8,7 @@ module Parser.GFParser
   ) where
 
 import PGF
-import Parser.Translate (exprToSentence, exprProperNouns, validateExpr)
+import Parser.Translate (validateExpr)
 
 data GrammarBundle = GrammarBundle
   { controlledPgf   ∷ PGF

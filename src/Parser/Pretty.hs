@@ -42,6 +42,12 @@ renderNP indent np =
         , indent <> "|- rel: " <> show rel
         , indent <> "\\- noun: " <> noun
         ]
+    CoordNP c a b ->
+      unlines
+        [ indent <> "|- CoordNP (" <> show c <> ")"
+        , renderNP (indent <> "   ") a
+        , renderNP (indent <> "   ") b
+        ]
 
 renderVP ∷ String → VerbPhrase → String
 renderVP indent vp =
@@ -57,4 +63,21 @@ renderVP indent vp =
         , indent <> "|- verb: " <> v
         , indent <> "\\- object"
         , renderNP (indent <> "   ") obj
+        ]
+    Copula adj ->
+      unlines
+        [ indent <> "|- Copula"
+        , indent <> "\\- " <> adj
+        ]
+    VPWithAdv base adv ->
+      unlines
+        [ indent <> "|- VPWithAdv"
+        , renderVP (indent <> "   ") base
+        , indent <> "\\- adv: " <> show adv
+        ]
+    CoordVP c a b ->
+      unlines
+        [ indent <> "|- CoordVP (" <> show c <> ")"
+        , renderVP (indent <> "   ") a
+        , renderVP (indent <> "   ") b
         ]

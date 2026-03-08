@@ -61,6 +61,7 @@ data AdvPhrase
 data VerbPhrase
   = Intransitive String
   | Transitive String NounPhrase
+  | Copula String
   | VPWithAdv VerbPhrase AdvPhrase
   | CoordVP Conj VerbPhrase VerbPhrase
   deriving (Eq, Show)

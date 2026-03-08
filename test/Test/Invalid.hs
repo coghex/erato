@@ -20,3 +20,19 @@ spec grammars = describe "Invalid sentences" $ do
   it "rejects missing verb: the dog the food" $ do
     let exprs = parseControlled grammars "the dog the food"
     shouldReject exprs
+
+  it "rejects subject case as object: the man eats they" $ do
+    let exprs = parseControlled grammars "the man eats they"
+    shouldReject exprs
+
+  it "rejects plural agreement with singular: the dog run" $ do
+    let exprs = parseControlled grammars "the dog run"
+    shouldReject exprs
+
+  it "rejects nonsense: runs the dog" $ do
+    let exprs = parseControlled grammars "runs the dog"
+    shouldReject exprs
+
+  it "rejects empty input" $ do
+    let exprs = parseControlled grammars ""
+    shouldReject exprs
