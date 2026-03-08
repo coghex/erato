@@ -66,6 +66,16 @@ renderNP indent np =
         , indent <> "|- number: " <> show n
         , indent <> "\\- case: " <> show c
         ]
+    PossessedNoun owner adjs noun num rel ->
+      unlines
+        [ indent <> "|- PossessedNoun"
+        , indent <> "|- possessor"
+        , renderNP (indent <> "   ") owner
+        , indent <> "|- adjs: " <> show adjs
+        , indent <> "|- number: " <> show num
+        , indent <> "|- rel: " <> show rel
+        , indent <> "\\- noun: " <> noun
+        ]
     CommonNoun det adjs noun num rel ->
       unlines
         [ indent <> "|- CommonNoun"

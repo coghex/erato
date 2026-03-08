@@ -353,6 +353,18 @@ parseNP cas (List [Atom "ConjNP", conj, np1, np2]) = do
   n1 <- parseNP cas np1
   n2 <- parseNP cas np2
   pure (CoordNP c n1 n2)
+parseNP _ (List [Atom "PossSgNP", possessor, n]) = do
+  owner <- parseNP Subjective possessor
+  (nounNum, adjs, noun, rel) <- parseN n
+  if nounNum == Singular
+    then pure (PossessedNoun owner adjs noun Singular rel)
+    else Nothing
+parseNP _ (List [Atom "PossPlNP", possessor, n]) = do
+  owner <- parseNP Subjective possessor
+  (nounNum, adjs, noun, rel) <- parseN n
+  if nounNum == Plural
+    then pure (PossessedNoun owner adjs noun Plural rel)
+    else Nothing
 parseNP _ (List [Atom "DetCN", det, n]) = do
   (detText, detNum) <- parseDetInfo det
   (nounNum, adjs, noun, rel) <- parseN n
@@ -402,6 +414,11 @@ renderNP (CoordNP c a b) =
   unwords [renderNP a, renderConj c, renderNP b]
 renderNP (ProperNoun s) = fantasyToken s
 renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
+renderNP (PossessedNoun owner adjs noun _ rel) =
+  let base = unwords ([renderNP owner, fantasyToken "poss"] ++ map fantasyToken (adjs ++ [noun]))
+  in case rel of
+       Nothing -> base
+       Just rc -> unwords [base, renderRelClause rc]
 renderNP (CommonNoun det adjs noun _ rel) =
   let base = unwords (map fantasyToken (maybe [] pure det ++ adjs ++ [noun]))
   in case rel of
@@ -438,6 +455,7 @@ renderConj Or  = fantasyToken "or"
 isThirdSingular ∷ NounPhrase → Bool
 isThirdSingular (CoordNP _ _ _) = False
 isThirdSingular (ProperNoun _) = True
+isThirdSingular (PossessedNoun _ _ _ Singular _) = True
 isThirdSingular (CommonNoun _ _ _ Singular _) = True
 isThirdSingular (Pronoun Third Singular _) = True
 isThirdSingular _ = False

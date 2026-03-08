@@ -51,6 +51,7 @@ data NounPhrase
       , number ∷ Number
       , rel    ∷ Maybe RelClause
       }
+  | PossessedNoun NounPhrase [String] String Number (Maybe RelClause)
   | CoordNP Conj NounPhrase NounPhrase
   deriving (Eq, Show)
 

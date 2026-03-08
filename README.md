@@ -75,6 +75,6 @@ mkTemp t ASimul used for VPS
 - [ ] Additional verb tenses (past/perfect)
 - [x] Question forms (yes/no + basic wh-questions)
 - [x] negation inside RCs (e.g., “the dog that does not run is big”)
-- [x] possessives
+- [x] possessives (determiners + basic 's genitives)
 - [ ] quantifiers (e.g., “every dog runs”)
 ```

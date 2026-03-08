@@ -56,13 +56,14 @@ test-suite erato-tests
                     , Test.Existential
                     , Test.Imperative
                     , Test.Invalid
-                    , Test.MoreDeterminers
-                    , Test.MorePrepositions
-                    , Test.Negation
-                     , Test.Passive
-                     , Test.Prepositions
-                     , Test.Progressive
-                     , Test.Pronouns
+                     , Test.MoreDeterminers
+                     , Test.MorePrepositions
+                     , Test.Negation
+                      , Test.Passive
+                     , Test.Possessives
+                      , Test.Prepositions
+                      , Test.Progressive
+                      , Test.Pronouns
                      , Test.ProperNouns
                      , Test.Questions
                      , Test.RelativeClauses

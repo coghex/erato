@@ -11,7 +11,7 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
-import Data.List (minimumBy)
+import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import PGF
@@ -35,21 +35,27 @@ loadGrammars controlledPath fallbackPath = do
 
 parseControlled ∷ GrammarBundle → String → [Expr]
 parseControlled bundle input =
-  let pgf    = controlledPgf bundle
-      lang   = controlledLang bundle
-      morpho = controlledMorpho bundle
-      typ    = startCat pgf
-      parses = parse pgf lang typ input
-  in filter (validParse morpho) parses
+  let pgf            = controlledPgf bundle
+      lang           = controlledLang bundle
+      morpho         = controlledMorpho bundle
+      typ            = startCat pgf
+      normalized     = normalizePossessives input
+      parses         = parse pgf lang typ (normalizedInput normalized)
+      validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
+      filteredParses = filterPossessiveParses normalized validParses
+  in map snd filteredParses
 
 parseControlledSentences ∷ GrammarBundle → String → [Sentence]
 parseControlledSentences bundle input =
-  let pgf    = controlledPgf bundle
-      lang   = controlledLang bundle
-      morpho = controlledMorpho bundle
-      typ    = startCat pgf
-      parses = parse pgf lang typ input
-  in mapMaybe (validatedSentence morpho) parses
+  let pgf            = controlledPgf bundle
+      lang           = controlledLang bundle
+      morpho         = controlledMorpho bundle
+      typ            = startCat pgf
+      normalized     = normalizePossessives input
+      parses         = parse pgf lang typ (normalizedInput normalized)
+      validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
+      filteredParses = filterPossessiveParses normalized validParses
+  in map fst filteredParses
 
 parsePreferredControlledSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredControlledSentence bundle input =
@@ -57,17 +63,25 @@ parsePreferredControlledSentence bundle input =
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
-  let pgf  = fallbackPgf bundle
-      lang = mkCId "AllEng"
-      typ  = startCat pgf
-  in parse pgf lang typ input
+  let pgf            = fallbackPgf bundle
+      lang           = mkCId "AllEng"
+      typ            = startCat pgf
+      normalized     = normalizePossessives input
+      parses         = parse pgf lang typ (normalizedInput normalized)
+      parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
+      filteredParses = filterPossessiveParses normalized parsedSentences
+  in map snd filteredParses
 
 parseFallbackSentences ∷ GrammarBundle → String → [Sentence]
 parseFallbackSentences bundle input =
-  let pgf  = fallbackPgf bundle
-      lang = mkCId "AllEng"
-      typ  = startCat pgf
-  in mapMaybe exprToSentence (parse pgf lang typ input)
+  let pgf            = fallbackPgf bundle
+      lang           = mkCId "AllEng"
+      typ            = startCat pgf
+      normalized     = normalizePossessives input
+      parses         = parse pgf lang typ (normalizedInput normalized)
+      parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
+      filteredParses = filterPossessiveParses normalized parsedSentences
+  in map fst filteredParses
 
 parsePreferredFallbackSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredFallbackSentence bundle input =
@@ -78,6 +92,94 @@ validParse morpho expr =
   case validatedSentence morpho expr of
     Just _  → True
     Nothing → False
+
+data NormalizedInput = NormalizedInput
+  { normalizedInput        ∷ String
+  , possessiveMarkerCount ∷ Int
+  }
+
+normalizePossessives ∷ String → NormalizedInput
+normalizePossessives input =
+  let tokens = words input
+      normalizedTokens = map normalizePossessiveToken tokens
+  in NormalizedInput
+       { normalizedInput = unwords normalizedTokens
+       , possessiveMarkerCount = length (filter isPossessiveToken tokens)
+       }
+
+normalizePossessiveToken ∷ String → String
+normalizePossessiveToken token
+  | Just stem <- stripSuffix "'s" token = stem
+  | Just stem <- stripSuffix "’s" token = stem
+  | Just stem <- stripSuffix "'" token
+  , not (null stem)
+  , last stem == 's' = stem
+  | Just stem <- stripSuffix "’" token
+  , not (null stem)
+  , last stem == 's' = stem
+  | otherwise = token
+
+isPossessiveToken ∷ String → Bool
+isPossessiveToken token =
+  any (`isSuffixOf` token) ["'s", "’s"]
+  || any (\suffix -> suffix `isSuffixOf` token && hasPluralPossessiveStem token suffix) ["'", "’"]
+
+hasPluralPossessiveStem ∷ String → String → Bool
+hasPluralPossessiveStem token suffix =
+  case stripSuffix suffix token of
+    Just stem -> not (null stem) && last stem == 's'
+    Nothing   -> False
+
+stripSuffix ∷ String → String → Maybe String
+stripSuffix suffix s
+  | suffix `isSuffixOf` s = Just (take (length s - length suffix) s)
+  | otherwise             = Nothing
+
+filterPossessiveParses ∷ NormalizedInput → [(Sentence, a)] → [(Sentence, a)]
+filterPossessiveParses normalized parses
+  | possessiveMarkerCount normalized == 0 = parses
+  | otherwise =
+      let matching = filter ((== possessiveMarkerCount normalized) . sentencePossessiveCount . fst) parses
+      in if null matching then parses else matching
+
+sentencePossessiveCount ∷ Sentence → Int
+sentencePossessiveCount (Sentence _ _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
+sentencePossessiveCount (Question _ _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
+sentencePossessiveCount (WhQuestion _ _ whClause) = whClausePossessiveCount whClause
+sentencePossessiveCount (Existential _ _ np) = nounPhrasePossessiveCount np
+sentencePossessiveCount (Imperative _ vp) = verbPhrasePossessiveCount vp
+
+nounPhrasePossessiveCount ∷ NounPhrase → Int
+nounPhrasePossessiveCount (ProperNoun _) = 0
+nounPhrasePossessiveCount (Pronoun _ _ _) = 0
+nounPhrasePossessiveCount (CommonNoun _ _ _ _ rel) = maybe 0 relClausePossessiveCount rel
+nounPhrasePossessiveCount (PossessedNoun owner _ _ _ rel) =
+  1 + nounPhrasePossessiveCount owner + maybe 0 relClausePossessiveCount rel
+nounPhrasePossessiveCount (CoordNP _ a b) =
+  nounPhrasePossessiveCount a + nounPhrasePossessiveCount b
+
+verbPhrasePossessiveCount ∷ VerbPhrase → Int
+verbPhrasePossessiveCount (Intransitive _) = 0
+verbPhrasePossessiveCount (Transitive _ np) = nounPhrasePossessiveCount np
+verbPhrasePossessiveCount (Copula _) = 0
+verbPhrasePossessiveCount (Passive _) = 0
+verbPhrasePossessiveCount (Progressive vp) = verbPhrasePossessiveCount vp
+verbPhrasePossessiveCount (VPWithAdv vp adv) = verbPhrasePossessiveCount vp + advPhrasePossessiveCount adv
+verbPhrasePossessiveCount (CoordVP _ a b) = verbPhrasePossessiveCount a + verbPhrasePossessiveCount b
+
+whClausePossessiveCount ∷ WhClause → Int
+whClausePossessiveCount (SubjectWh _ vp) = verbPhrasePossessiveCount vp
+whClausePossessiveCount (ObjectWh _ subj _) = nounPhrasePossessiveCount subj
+whClausePossessiveCount (AdvWh _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
+
+relClausePossessiveCount ∷ RelClause → Int
+relClausePossessiveCount (RelVP vp) = verbPhrasePossessiveCount vp
+relClausePossessiveCount (NegRelVP vp) = verbPhrasePossessiveCount vp
+relClausePossessiveCount (RelV2 _ np) = nounPhrasePossessiveCount np
+relClausePossessiveCount (NegRelV2 _ np) = nounPhrasePossessiveCount np
+
+advPhrasePossessiveCount ∷ AdvPhrase → Int
+advPhrasePossessiveCount (PrepPhrase _ np) = nounPhrasePossessiveCount np
 
 validatedSentence ∷ Morpho → Expr → Maybe Sentence
 validatedSentence morpho expr =
@@ -136,6 +238,8 @@ whClauseBarePenalty (AdvWh _ subj vp) =
 nounPhraseLexicalPenalty ∷ NounPhrase → Int
 nounPhraseLexicalPenalty (ProperNoun _) = 0
 nounPhraseLexicalPenalty (Pronoun _ _ _) = 0
+nounPhraseLexicalPenalty (PossessedNoun owner _ noun _ rel) =
+  nounPhraseLexicalPenalty owner + functionWordPenalty noun + maybe 0 relClausePenalty rel
 nounPhraseLexicalPenalty (CommonNoun _ _ noun _ rel) =
   functionWordPenalty noun + maybe 0 relClausePenalty rel
 nounPhraseLexicalPenalty (CoordNP _ a b) =
@@ -144,6 +248,8 @@ nounPhraseLexicalPenalty (CoordNP _ a b) =
 nounPhraseBarePenalty ∷ NounPhrase → Int
 nounPhraseBarePenalty (ProperNoun _) = 0
 nounPhraseBarePenalty (Pronoun _ _ _) = 0
+nounPhraseBarePenalty (PossessedNoun _ _ _ _ rel) =
+  maybe 0 relClauseBarePenalty rel
 nounPhraseBarePenalty (CommonNoun Nothing _ _ Singular rel) =
   4 + maybe 0 relClauseBarePenalty rel
 nounPhraseBarePenalty (CommonNoun Nothing _ _ Plural rel) =
