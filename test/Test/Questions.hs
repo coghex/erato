@@ -186,6 +186,10 @@ spec grammars = describe "Questions" $ do
           (CommonNoun (Just "the") [] "dog" Singular Nothing)
           "eat")
 
+  it "rejects how-much with count noun: how much dog runs" $ do
+    let exprs = parseControlled grammars "how much dog runs"
+    shouldReject exprs
+
   it "parses adverb wh-question: where does the dog run" $ do
     let exprs = parseControlled grammars "where does the dog run"
     shouldParse exprs

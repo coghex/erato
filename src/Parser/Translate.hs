@@ -265,7 +265,10 @@ parseQuestionDetNP idet n = do
   let finalNum = maybe nounNum id detNum
   case detNum of
     Just dnum | dnum /= nounNum -> Nothing
-    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
+    _ | quantifierAdjNounAgreementOk finalNum adjs noun
+      , questionDeterminerNounCountabilityOk detText noun ->
+          pure (CommonNoun (Just detText) adjs noun finalNum rel)
+      | otherwise -> Nothing
 
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
@@ -445,13 +448,13 @@ parseNP cas (List [Atom "ConjNP", conj, np1, np2]) = do
 parseNP _ (List [Atom "PossSgNP", possessor, n]) = do
   owner <- parseNP Subjective possessor
   (nounNum, adjs, noun, rel) <- parseN n
-  if possessorAllowed owner && nounNum == Singular && quantifierAdjAgreementOk nounNum adjs
+  if possessorAllowed owner && nounNum == Singular && quantifierAdjNounAgreementOk nounNum adjs noun
     then pure (PossessedNoun owner adjs noun Singular rel)
     else Nothing
 parseNP _ (List [Atom "PossPlNP", possessor, n]) = do
   owner <- parseNP Subjective possessor
   (nounNum, adjs, noun, rel) <- parseN n
-  if possessorAllowed owner && nounNum == Plural && quantifierAdjAgreementOk nounNum adjs
+  if possessorAllowed owner && nounNum == Plural && quantifierAdjNounAgreementOk nounNum adjs noun
     then pure (PossessedNoun owner adjs noun Plural rel)
     else Nothing
 parseNP _ (List [Atom "DetCN", det, n]) = do
@@ -460,12 +463,13 @@ parseNP _ (List [Atom "DetCN", det, n]) = do
   let finalNum = maybe nounNum id detNum
   case detNum of
     Just dnum | dnum /= nounNum -> Nothing
-    _ | quantifierAdjAgreementOk finalNum adjs ->
+    _ | quantifierAdjNounAgreementOk finalNum adjs noun
+      , determinerNounCountabilityOk detText noun ->
           pure (CommonNoun (Just detText) adjs noun finalNum rel)
       | otherwise -> Nothing
 parseNP _ (List [Atom "UseN", n]) = do
   (num, adjs, noun, rel) <- parseN n
-  if quantifierAdjAgreementOk num adjs
+  if quantifierAdjNounAgreementOk num adjs noun
     then pure (CommonNoun Nothing adjs noun num rel)
     else Nothing
 parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
@@ -522,10 +526,74 @@ possessorAllowed ∷ NounPhrase → Bool
 possessorAllowed (CommonNoun Nothing _ _ _ _) = False
 possessorAllowed _ = True
 
-quantifierAdjAgreementOk ∷ Number → [String] → Bool
-quantifierAdjAgreementOk Singular adjs =
-  not (any (`elem` ["all", "many"]) adjs)
-quantifierAdjAgreementOk Plural _ = True
+quantifierAdjNounAgreementOk ∷ Number → [String] → String → Bool
+quantifierAdjNounAgreementOk num adjs noun =
+  singularQuantOk && lessAdjOk && fewerAdjOk
+  where
+    lowerAdjs = map (map toLower) adjs
+    singularQuantOk =
+      case num of
+        Singular -> not (any (`elem` ["all", "many"]) lowerAdjs)
+        Plural   -> True
+    lessAdjOk =
+      not ("less" `elem` lowerAdjs) || (num == Singular && lessCompatible noun)
+    fewerAdjOk =
+      not ("fewer" `elem` lowerAdjs) || (num == Plural && fewerCompatible noun)
+
+determinerNounCountabilityOk ∷ String → String → Bool
+determinerNounCountabilityOk detText noun =
+  case map toLower detText of
+    "less"  -> lessCompatible noun
+    "fewer" -> fewerCompatible noun
+    _       -> True
+
+questionDeterminerNounCountabilityOk ∷ String → String → Bool
+questionDeterminerNounCountabilityOk detText noun =
+  case map toLower detText of
+    "how much" -> lessCompatible noun
+    "how many" -> fewerCompatible noun
+    _          -> True
+
+lessCompatible ∷ String → Bool
+lessCompatible noun
+  | isMassNounHint noun = True
+  | isCountNounHint noun = False
+  | otherwise = True
+
+fewerCompatible ∷ String → Bool
+fewerCompatible noun = not (isMassNounHint noun)
+
+isMassNounHint ∷ String → Bool
+isMassNounHint noun =
+  map toLower noun `elem`
+    [ "advice"
+    , "air"
+    , "equipment"
+    , "food"
+    , "furniture"
+    , "information"
+    , "money"
+    , "music"
+    , "rice"
+    , "traffic"
+    , "water"
+    , "work"
+    ]
+
+isCountNounHint ∷ String → Bool
+isCountNounHint noun =
+  map toLower noun `elem`
+    [ "cat"
+    , "city"
+    , "day"
+    , "dog"
+    , "man"
+    , "park"
+    , "spoon"
+    , "table"
+    , "woman"
+    , "year"
+    ]
 
 renderNP ∷ NounPhrase → String
 renderNP (CoordNP c a b) =

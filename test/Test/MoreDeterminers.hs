@@ -175,3 +175,11 @@ spec grammars = describe "More determiners" $ do
   it "rejects fewer with singular: fewer dog runs" $ do
     let exprs = parseControlled grammars "fewer dog runs"
     shouldReject exprs
+
+  it "rejects less with count noun: less dog runs" $ do
+    let exprs = parseControlled grammars "less dog runs"
+    shouldReject exprs
+
+  it "rejects fewer with mass noun: fewer foods run" $ do
+    let exprs = parseControlled grammars "fewer foods run"
+    shouldReject exprs
