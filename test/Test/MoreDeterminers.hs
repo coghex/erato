@@ -82,6 +82,16 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Transitive "eat" (CommonNoun (Just "less") [] "food" Singular Nothing))
 
+  it "parses superlative complement object: the man eats the most food on the table" $ do
+    let exprs = parseControlled grammars "the man eats the most food on the table"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
+        (Transitive "eat"
+          (CommonNoun (Just "the") ["most"] "food" Singular
+            (Just (RelPrep "on" (CommonNoun (Just "the") [] "table" Singular Nothing)))))
+
   it "parses singular no: no dog runs" $ do
     let exprs = parseControlled grammars "no dog runs"
     shouldParse exprs

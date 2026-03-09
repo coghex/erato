@@ -381,6 +381,7 @@ relClausePossessiveCount (RelVP vp) = verbPhrasePossessiveCount vp
 relClausePossessiveCount (NegRelVP vp) = verbPhrasePossessiveCount vp
 relClausePossessiveCount (RelV2 _ np) = nounPhrasePossessiveCount np
 relClausePossessiveCount (NegRelV2 _ np) = nounPhrasePossessiveCount np
+relClausePossessiveCount (RelPrep _ np) = nounPhrasePossessiveCount np
 
 advPhrasePossessiveCount ∷ AdvPhrase → Int
 advPhrasePossessiveCount (PrepPhrase _ np) = nounPhrasePossessiveCount np
@@ -520,12 +521,14 @@ relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp
 relClausePenalty (NegRelVP vp) = verbPhraseLexicalPenalty vp
 relClausePenalty (RelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
 relClausePenalty (NegRelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
+relClausePenalty (RelPrep _ np) = nounPhraseLexicalPenalty np
 
 relClauseBarePenalty ∷ RelClause → Int
 relClauseBarePenalty (RelVP vp) = verbPhraseBarePenalty vp
 relClauseBarePenalty (NegRelVP vp) = verbPhraseBarePenalty vp
 relClauseBarePenalty (RelV2 _ np) = nounPhraseBarePenalty np
 relClauseBarePenalty (NegRelV2 _ np) = nounPhraseBarePenalty np
+relClauseBarePenalty (RelPrep _ np) = nounPhraseBarePenalty np
 
 functionWordPenalty ∷ String → Int
 functionWordPenalty word

@@ -166,6 +166,13 @@ parseN (List [Atom "AdjCN", a, n]) = do
   adj <- parseA a
   (num, adjs, noun, rel) <- parseN n
   pure (num, adj : adjs, noun, rel)
+parseN (List [Atom "PrepCN", n, prep, np]) = do
+  (num, adjs, noun, rel) <- parseN n
+  prepTxt <- parsePrep prep
+  obj <- parseNP Objective np
+  case rel of
+    Nothing -> pure (num, adjs, noun, Just (RelPrep prepTxt obj))
+    Just _  -> Nothing
 parseN (List [Atom "RelCN", n, rc]) = do
   (num, adjs, noun, rel) <- parseN n
   rc' <- parseRelClause rc
@@ -616,6 +623,8 @@ renderRelClause (RelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken v, renderNP obj]
 renderRelClause (NegRelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken "not", fantasyToken v, renderNP obj]
+renderRelClause (RelPrep prep obj) =
+  unwords [fantasyToken prep, renderNP obj]
 
 renderAdv ∷ AdvPhrase → String
 renderAdv (PrepPhrase prep np) =

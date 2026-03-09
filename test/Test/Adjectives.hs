@@ -49,3 +49,12 @@ spec grammars = describe "Adjectives" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") ["biggest"] "dog" Singular Nothing)
         (Intransitive "run")
+
+  it "parses superlative noun phrase with PP complement: the biggest dog in the park runs" $ do
+    let exprs = parseControlled grammars "the biggest dog in the park runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["biggest"] "dog" Singular
+          (Just (RelPrep "in" (CommonNoun (Just "the") [] "park" Singular Nothing))))
+        (Intransitive "run")

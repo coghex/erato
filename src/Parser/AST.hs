@@ -60,6 +60,7 @@ data RelClause
   | NegRelVP VerbPhrase
   | RelV2 String NounPhrase
   | NegRelV2 String NounPhrase
+  | RelPrep String NounPhrase
   deriving (Eq, Show)
 
 data AdvPhrase
