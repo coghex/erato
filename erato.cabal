@@ -71,6 +71,7 @@ test-suite erato-tests
                      , Test.Questions
                      , Test.RelativeClauses
                      , Test.SubordinateClauses
+                     , Test.TokenizationHardening
                      , Test.Tense
     build-depends:    base
                     , directory

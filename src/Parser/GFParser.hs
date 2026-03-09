@@ -11,7 +11,7 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
-import Data.Char (isUpper, toLower)
+import Data.Char (isAlphaNum, isUpper, toLower)
 import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
@@ -40,7 +40,7 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -56,7 +56,7 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -76,7 +76,7 @@ parseFallbackAllEng bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -92,7 +92,7 @@ parseFallbackSentences bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -110,6 +110,32 @@ data NormalizedInput = NormalizedInput
   { normalizedInput        ∷ String
   , possessiveMarkerCount ∷ Int
   }
+
+tokenizeInput ∷ String → String
+tokenizeInput input =
+  let roughTokens = words (map normalizeTokenChar input)
+      cleanedTokens = map cleanToken roughTokens
+  in unwords (filter (not . null) cleanedTokens)
+
+normalizeTokenChar ∷ Char → Char
+normalizeTokenChar c
+  | c == '’' = '\''
+  | isAlphaNum c || c == '\'' = c
+  | otherwise = ' '
+
+cleanToken ∷ String → String
+cleanToken token =
+  let noLeadingQuotes = dropWhile (== '\'') token
+  in trimTrailingQuotes noLeadingQuotes
+
+trimTrailingQuotes ∷ String → String
+trimTrailingQuotes token
+  | tokenHasPluralPossessiveQuote token = token
+  | otherwise = reverse (dropWhile (== '\'') (reverse token))
+
+tokenHasPluralPossessiveQuote ∷ String → Bool
+tokenHasPluralPossessiveQuote token =
+  "'" `isSuffixOf` token && hasPluralPossessiveStem token "'"
 
 normalizeContractions ∷ String → String
 normalizeContractions input =

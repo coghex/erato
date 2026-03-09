@@ -31,6 +31,7 @@ import qualified Test.Questions as Questions
 import qualified Test.Modals as Modals
 import qualified Test.Contractions as Contractions
 import qualified Test.SubordinateClauses as SubordinateClauses
+import qualified Test.TokenizationHardening as TokenizationHardening
 
 main ∷ IO ()
 main = do
@@ -61,5 +62,6 @@ main = do
       Modals.spec g
       Contractions.spec g
       SubordinateClauses.spec g
+      TokenizationHardening.spec g
       Questions.spec g
       Invalid.spec g
