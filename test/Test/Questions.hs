@@ -190,6 +190,71 @@ spec grammars = describe "Questions" $ do
               (CommonNoun (Just "the") [] "man" Singular Nothing)
               "see"))
 
+  it "parses object which-question with watch + VP complement: which dog does the man watch run faster" $ do
+    let exprs = parseControlled grammars "which dog does the man watch run faster"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular
+            (Just (RelVP (VPWithAdv
+              (Intransitive "run")
+              (LexicalAdv "faster")))))
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "watch")
+
+  it "parses object which-question with hear + VP complement: which dog does the man hear run faster" $ do
+    let exprs = parseControlled grammars "which dog does the man hear run faster"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular
+            (Just (RelVP (VPWithAdv
+              (Intransitive "run")
+              (LexicalAdv "faster")))))
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "hear")
+
+  it "parses object which-question with make + VP complement: which dog does the man make run faster" $ do
+    let exprs = parseControlled grammars "which dog does the man make run faster"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular
+            (Just (RelVP (VPWithAdv
+              (Intransitive "run")
+              (LexicalAdv "faster")))))
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "make")
+
+  it "parses object which-question with non-run VP complement: which dog does the man see eat faster" $ do
+    let exprs = parseControlled grammars "which dog does the man see eat faster"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular
+            (Just (RelVP (VPWithAdv
+              (Intransitive "eat")
+              (LexicalAdv "faster")))))
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "see")
+
+  it "prefers generalized matrix/complement object comparative WH parse" $ do
+    parsePreferredControlledSentence grammars "which dog does the man watch eat faster"
+      `shouldBe`
+        Just
+          (WhQuestion Present Positive
+            (ObjectDetWh Which
+              (CommonNoun (Just "which") [] "dog" Singular
+                (Just (RelVP (VPWithAdv
+                  (Intransitive "eat")
+                  (LexicalAdv "faster")))))
+              (CommonNoun (Just "the") [] "man" Singular Nothing)
+              "watch"))
+
   it "parses subject how-many question: how many dogs run" $ do
     let exprs = parseControlled grammars "how many dogs run"
     shouldParse exprs

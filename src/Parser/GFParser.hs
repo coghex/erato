@@ -161,22 +161,89 @@ rewriteQuestionNegationTokens tokens = tokens
 rewriteObjectComparativeWhTokens ∷ [String] → [String]
 rewriteObjectComparativeWhTokens (wh : noun : aux : rest)
   | map toLower wh == "which"
-  , map toLower aux `elem` ["do", "does", "did"] =
-      case break (\t → map toLower t == "see") rest of
-        (subj, seeTok : runTok : compHead : compTail)
+  , isObjectWhAux aux =
+      case break isObjectComparativeMatrixVerb rest of
+        (subj, matrixVerb : compVerb : compTail)
           | not (null subj)
-          , map toLower runTok == "run"
-          , isComparativeAdverbLike (map toLower compHead) ->
-              [wh, noun, "that", inflectRelativeRun aux noun]
-                ++ (compHead : compTail) ++ [aux] ++ subj ++ [seeTok]
+          , isLikelyBareVerbToken compVerb
+          , containsComparativeAdverbToken compTail ->
+              [wh, noun, "that", inflectRelativeVerb aux noun compVerb]
+                ++ compTail ++ [aux] ++ subj ++ [matrixVerb]
         _ -> wh : noun : aux : rest
 rewriteObjectComparativeWhTokens tokens = tokens
 
-inflectRelativeRun ∷ String → String → String
-inflectRelativeRun aux noun
-  | map toLower aux == "did" = "ran"
-  | looksPlural noun = "run"
-  | otherwise = "runs"
+isObjectWhAux ∷ String → Bool
+isObjectWhAux token =
+  map toLower token `elem` ["do", "does", "did"]
+
+isObjectComparativeMatrixVerb ∷ String → Bool
+isObjectComparativeMatrixVerb token =
+  map toLower token `elem` ["see", "watch", "hear", "make"]
+
+isLikelyBareVerbToken ∷ String → Bool
+isLikelyBareVerbToken token =
+  let lower = map toLower token
+  in all isAlpha lower && not (null lower) && lower `notElem` nonVerbTokens
+  where
+    nonVerbTokens =
+      [ "the", "a", "an", "this", "that", "these", "those"
+      , "my", "your", "his", "her", "its", "our", "their"
+      , "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them"
+      , "not", "and", "or", "to", "than"
+      , "do", "does", "did", "is", "are", "was", "were", "has", "have", "had"
+      ]
+
+containsComparativeAdverbToken ∷ [String] → Bool
+containsComparativeAdverbToken =
+  any (isComparativeAdverbLike . map toLower)
+
+inflectRelativeVerb ∷ String → String → String → String
+inflectRelativeVerb aux noun verb
+  | map toLower aux == "did" = pastForm baseVerb
+  | looksPlural noun = baseVerb
+  | otherwise = thirdPersonSingularForm baseVerb
+  where
+    baseVerb = map toLower verb
+
+pastForm ∷ String → String
+pastForm verb =
+  case verb of
+    "run" -> "ran"
+    "eat" -> "ate"
+    "go" -> "went"
+    "be" -> "was"
+    "have" -> "had"
+    "do" -> "did"
+    "see" -> "saw"
+    "hear" -> "heard"
+    "make" -> "made"
+    _ -> regularPastForm verb
+
+thirdPersonSingularForm ∷ String → String
+thirdPersonSingularForm verb
+  | endsWithAny ["s", "x", "z", "ch", "sh", "o"] verb = verb ++ "es"
+  | hasConsonantYEnding verb = init verb ++ "ies"
+  | otherwise = verb ++ "s"
+
+regularPastForm ∷ String → String
+regularPastForm verb
+  | "e" `isSuffixOf` verb = verb ++ "d"
+  | hasConsonantYEnding verb = init verb ++ "ied"
+  | otherwise = verb ++ "ed"
+
+hasConsonantYEnding ∷ String → Bool
+hasConsonantYEnding word =
+  case reverse word of
+    'y' : prev : _ -> not (isVowel prev)
+    _ -> False
+
+isVowel ∷ Char → Bool
+isVowel c =
+  c `elem` ("aeiou" ∷ String)
+
+endsWithAny ∷ [String] → String → Bool
+endsWithAny suffixes word =
+  any (`isSuffixOf` word) suffixes
 
 looksPlural ∷ String → Bool
 looksPlural noun =
