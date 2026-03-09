@@ -214,6 +214,9 @@ parseDetInfo (Atom "a_Det")     = Just ("a", Just Singular)
 parseDetInfo (Atom "thePl_Det") = Just ("the", Just Plural)
 parseDetInfo (Atom "aPl_Det")   = Just ("some", Just Plural)
 parseDetInfo (Atom "every_Det") = Just ("every", Just Singular)
+parseDetInfo (Atom "all_Det")   = Just ("all", Just Plural)
+parseDetInfo (Atom "many_Det")  = Just ("many", Just Plural)
+parseDetInfo (Atom "no_Det")    = Just ("no", Nothing)
 parseDetInfo (Atom "this_Det")  = Just ("this", Just Singular)
 parseDetInfo (Atom "that_Det")  = Just ("that", Just Singular)
 parseDetInfo (Atom "these_Det") = Just ("these", Just Plural)
@@ -374,13 +377,13 @@ parseNP cas (List [Atom "ConjNP", conj, np1, np2]) = do
 parseNP _ (List [Atom "PossSgNP", possessor, n]) = do
   owner <- parseNP Subjective possessor
   (nounNum, adjs, noun, rel) <- parseN n
-  if nounNum == Singular
+  if possessorAllowed owner && nounNum == Singular && quantifierAdjAgreementOk nounNum adjs
     then pure (PossessedNoun owner adjs noun Singular rel)
     else Nothing
 parseNP _ (List [Atom "PossPlNP", possessor, n]) = do
   owner <- parseNP Subjective possessor
   (nounNum, adjs, noun, rel) <- parseN n
-  if nounNum == Plural
+  if possessorAllowed owner && nounNum == Plural && quantifierAdjAgreementOk nounNum adjs
     then pure (PossessedNoun owner adjs noun Plural rel)
     else Nothing
 parseNP _ (List [Atom "DetCN", det, n]) = do
@@ -389,10 +392,14 @@ parseNP _ (List [Atom "DetCN", det, n]) = do
   let finalNum = maybe nounNum id detNum
   case detNum of
     Just dnum | dnum /= nounNum -> Nothing
-    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
+    _ | quantifierAdjAgreementOk finalNum adjs ->
+          pure (CommonNoun (Just detText) adjs noun finalNum rel)
+      | otherwise -> Nothing
 parseNP _ (List [Atom "UseN", n]) = do
   (num, adjs, noun, rel) <- parseN n
-  pure (CommonNoun Nothing adjs noun num rel)
+  if quantifierAdjAgreementOk num adjs
+    then pure (CommonNoun Nothing adjs noun num rel)
+    else Nothing
 parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
 parseNP c (List [Atom "UsePron", pr]) = do
   (p, n) <- parsePron pr
@@ -439,6 +446,15 @@ parseConj ∷ SExp → Maybe Conj
 parseConj (Atom "and_Conj") = Just And
 parseConj (Atom "or_Conj")  = Just Or
 parseConj _ = Nothing
+
+possessorAllowed ∷ NounPhrase → Bool
+possessorAllowed (CommonNoun Nothing _ _ _ _) = False
+possessorAllowed _ = True
+
+quantifierAdjAgreementOk ∷ Number → [String] → Bool
+quantifierAdjAgreementOk Singular adjs =
+  not (any (`elem` ["all", "many"]) adjs)
+quantifierAdjAgreementOk Plural _ = True
 
 renderNP ∷ NounPhrase → String
 renderNP (CoordNP c a b) =

@@ -77,5 +77,5 @@ mkTemp t ASimul used for VPS
 - [x] negation inside RCs (e.g., “the dog that does not run is big”)
 - [x] possessives (determiners + basic 's genitives)
 - [x] infinitival + that-clause complements
-- [ ] quantifiers (e.g., “every dog runs”)
+- [x] quantifiers (e.g., “every/all/many/no dog(s) ...”)
 ```

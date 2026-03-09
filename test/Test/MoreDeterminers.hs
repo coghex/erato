@@ -18,6 +18,38 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "every") [] "dog" Singular Nothing)
         (Intransitive "run")
 
+  it "parses all: all dogs run" $ do
+    let exprs = parseControlled grammars "all dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "all") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "parses many: many dogs run" $ do
+    let exprs = parseControlled grammars "many dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "many") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "parses singular no: no dog runs" $ do
+    let exprs = parseControlled grammars "no dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "no") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses plural no: no dogs run" $ do
+    let exprs = parseControlled grammars "no dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "no") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
   it "parses this: this dog runs" $ do
     let exprs = parseControlled grammars "this dog runs"
     shouldParse exprs
@@ -72,4 +104,12 @@ spec grammars = describe "More determiners" $ do
 
   it "rejects every with plural: every dogs run" $ do
     let exprs = parseControlled grammars "every dogs run"
+    shouldReject exprs
+
+  it "rejects many with singular: many dog runs" $ do
+    let exprs = parseControlled grammars "many dog runs"
+    shouldReject exprs
+
+  it "rejects all with singular: all dog runs" $ do
+    let exprs = parseControlled grammars "all dog runs"
     shouldReject exprs
