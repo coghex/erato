@@ -16,7 +16,7 @@ import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import PGF
-import Parser.AST (AdvPhrase(..), NounPhrase(..), Number(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
+import Parser.AST (AdvPhrase(..), NounPhrase(..), Number(..), QuestionWord(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
 import Parser.Translate (exprToSentence, validateExpr)
 
 data GrammarBundle = GrammarBundle
@@ -448,8 +448,10 @@ whClauseDisambiguationPenalty (SubjectWh _ vp) = verbPhraseDisambiguationPenalty
 whClauseDisambiguationPenalty (ObjectWh _ subj _) = nounPhraseDisambiguationPenalty subj
 whClauseDisambiguationPenalty (SubjectDetWh _ queried vp) =
   nounPhraseDisambiguationPenalty queried + verbPhraseDisambiguationPenalty vp
-whClauseDisambiguationPenalty (ObjectDetWh _ queried subj _) =
-  nounPhraseDisambiguationPenalty queried + nounPhraseDisambiguationPenalty subj
+whClauseDisambiguationPenalty (ObjectDetWh qword queried subj _) =
+  nounPhraseDisambiguationPenalty queried
+    + nounPhraseDisambiguationPenalty subj
+    + objectDetComparativeAdverbPenalty qword queried
 whClauseDisambiguationPenalty (AdvWh _ subj vp) =
   nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
 
@@ -623,6 +625,12 @@ isComparativeAdverbLike ∷ String → Bool
 isComparativeAdverbLike token =
   token `elem` ["better", "worse", "faster", "slower", "harder", "sooner", "later"]
     || (length token > 3 && "er" `isSuffixOf` token && all isAlpha token)
+
+objectDetComparativeAdverbPenalty ∷ QuestionWord → NounPhrase → Int
+objectDetComparativeAdverbPenalty HowMuch (CommonNoun (Just detTxt) [] noun Singular Nothing)
+  | map toLower detTxt == "how much"
+    && isComparativeAdverbLike (map toLower noun) = 3
+objectDetComparativeAdverbPenalty _ _ = 0
 
 ambiguousVerbHeadPenalty ∷ String → Int
 ambiguousVerbHeadPenalty verb

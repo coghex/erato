@@ -116,10 +116,11 @@ parseQCl (List [Atom "QuestIDetV2", idet, n, np, v2]) = do
     then pure (ParsedWhQuestion (ObjectDetWh qword queried subj lemma))
     else Nothing
 parseQCl (List [Atom "QuestIAdv", iadv, cl]) = do
-  qword <- parseQuestionIAdv iadv
+  (qword, frontedAdvs) <- parseQuestionIAdv iadv
   (subj, vp, vform) <- parseCl cl
-  if questionAgreementOk vp vform
-    then pure (ParsedWhQuestion (AdvWh qword subj vp))
+  let vp' = foldl VPWithAdv vp frontedAdvs
+  if questionAgreementOk vp' vform
+    then pure (ParsedWhQuestion (AdvWh qword subj vp'))
     else Nothing
 parseQCl cl = do
   (subj, vp, vform) <- parseCl cl
@@ -245,11 +246,16 @@ parseQuestionIP (Atom "who_IP")  = Just Who
 parseQuestionIP (Atom "what_IP") = Just What
 parseQuestionIP _ = Nothing
 
-parseQuestionIAdv ∷ SExp → Maybe QuestionWord
-parseQuestionIAdv (Atom "where_IAdv") = Just Where
-parseQuestionIAdv (Atom "when_IAdv")  = Just When
-parseQuestionIAdv (Atom "why_IAdv")   = Just Why
-parseQuestionIAdv (Atom "how_IAdv")   = Just How
+parseQuestionIAdv ∷ SExp → Maybe (QuestionWord, [AdvPhrase])
+parseQuestionIAdv (Atom "where_IAdv") = Just (Where, [])
+parseQuestionIAdv (Atom "when_IAdv")  = Just (When, [])
+parseQuestionIAdv (Atom "why_IAdv")   = Just (Why, [])
+parseQuestionIAdv (Atom "how_IAdv")   = Just (How, [])
+parseQuestionIAdv (Atom "howMuch_IAdv") = Just (HowMuch, [])
+parseQuestionIAdv (List [Atom "ModIAdv", iadv, adv]) = do
+  (qword, advs) <- parseQuestionIAdv iadv
+  advp <- parseAdv adv
+  pure (qword, advs ++ [advp])
 parseQuestionIAdv _ = Nothing
 
 parseQuestionIDet ∷ SExp → Maybe QuestionWord

@@ -123,6 +123,28 @@ spec grammars = describe "Questions" $ do
           (CommonNoun (Just "which") [] "dog" Singular Nothing)
           (Intransitive "run"))
 
+  it "parses subject which-question with comparative adverb: which dog runs better" $ do
+    let exprs = parseControlled grammars "which dog runs better"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular Nothing)
+          (VPWithAdv
+            (Intransitive "run")
+            (LexicalAdv "better")))
+
+  it "prefers comparative-adverb which-question parse: which dog runs better" $ do
+    parsePreferredControlledSentence grammars "which dog runs better"
+      `shouldBe`
+        Just
+          (WhQuestion Present Positive
+            (SubjectDetWh Which
+              (CommonNoun (Just "which") [] "dog" Singular Nothing)
+              (VPWithAdv
+                (Intransitive "run")
+                (LexicalAdv "better"))))
+
   it "parses plural subject which-question: which dogs run" $ do
     let exprs = parseControlled grammars "which dogs run"
     shouldParse exprs
@@ -225,6 +247,28 @@ spec grammars = describe "Questions" $ do
         (AdvWh How
           (CommonNoun (Just "the") [] "dog" Singular Nothing)
           (Intransitive "run"))
+
+  it "parses comparative adverb how-much question: how much faster does the dog run" $ do
+    let exprs = parseControlled grammars "how much faster does the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh HowMuch
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (VPWithAdv
+            (Intransitive "run")
+            (LexicalAdv "faster")))
+
+  it "prefers comparative adverb how-much parse over object reading" $ do
+    parsePreferredControlledSentence grammars "how much faster does the dog run"
+      `shouldBe`
+        Just
+          (WhQuestion Present Positive
+            (AdvWh How
+              (CommonNoun (Just "the") [] "dog" Singular Nothing)
+              (VPWithAdv
+                (Intransitive "run")
+                (ModifiedAdv "much" (LexicalAdv "faster")))))
 
   it "rejects inflected object wh-question verb: what does the man eats" $ do
     let exprs = parseControlled grammars "what does the man eats"
