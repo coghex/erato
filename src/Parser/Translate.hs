@@ -482,7 +482,9 @@ renderVP (CoordVP c a b) =
 renderVP (Intransitive v) = fantasyToken v
 renderVP (Transitive v obj) = unwords [fantasyToken v, renderNP obj]
 renderVP (VVComplement v vp) =
-  unwords [fantasyToken v, renderInfinitiveVP vp]
+  if isModalAux v
+    then unwords [fantasyToken v, renderVP vp]
+    else unwords [fantasyToken v, renderInfinitiveVP vp]
 renderVP (V2VComplement v obj vp) =
   unwords [fantasyToken v, renderNP obj, renderInfinitiveVP vp]
 renderVP (VSComplement v sentence) =
@@ -558,6 +560,10 @@ renderPronoun Third Singular Subjective = "he"
 renderPronoun Third Singular Objective  = "him"
 renderPronoun Third Plural   Subjective = "they"
 renderPronoun Third Plural   Objective  = "them"
+
+isModalAux ∷ String → Bool
+isModalAux verb =
+  verb `elem` ["can", "could", "may", "might", "must", "shall", "should", "will", "would"]
 
 fantasyToken ∷ String → String
 fantasyToken s =

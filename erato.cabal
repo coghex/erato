@@ -59,7 +59,8 @@ test-suite erato-tests
                     , Test.Invalid
                      , Test.MoreDeterminers
                      , Test.MorePrepositions
-                     , Test.Negation
+                     , Test.Modals
+                      , Test.Negation
                       , Test.Passive
                      , Test.Possessives
                       , Test.Prepositions
