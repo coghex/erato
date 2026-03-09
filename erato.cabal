@@ -41,6 +41,16 @@ executable erato
     hs-source-dirs:   app
     default-language: GHC2024
 
+executable erato-corpus
+    import:           warnings
+    main-is:          CorpusMain.hs
+    build-depends:    base
+                    , directory
+                    , erato
+                    , filepath
+    hs-source-dirs:   app
+    default-language: GHC2024
+
 test-suite erato-tests
     import:           warnings
     type:             exitcode-stdio-1.0

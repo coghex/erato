@@ -23,6 +23,7 @@ data GrammarBundle = GrammarBundle
   { controlledPgf   ∷ PGF
   , fallbackPgf     ∷ PGF
   , controlledLang  ∷ CId
+  , fallbackLang    ∷ Maybe CId
   , controlledMorpho ∷ Morpho
   }
 
@@ -32,7 +33,10 @@ loadGrammars controlledPath fallbackPath = do
   f <- readPGF fallbackPath
   let lang   = mkCId "EratoEng"
       morpho = buildMorpho c lang
-  pure (GrammarBundle c f lang morpho)
+      fallback = case languages f of
+        l : _ -> Just l
+        [] -> Nothing
+  pure (GrammarBundle c f lang fallback morpho)
 
 parseControlled ∷ GrammarBundle → String → [Expr]
 parseControlled bundle input =
@@ -73,7 +77,7 @@ parsePreferredControlledSentence bundle input =
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
   let pgf            = fallbackPgf bundle
-      lang           = mkCId "AllEng"
+      mLang          = fallbackLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
       rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
@@ -81,7 +85,9 @@ parseFallbackAllEng bundle input =
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
         | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = parse pgf lang typ parseInput
+      parses         = case mLang of
+        Just lang -> parse pgf lang typ parseInput
+        Nothing -> concat (parseAll pgf typ parseInput)
       parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
       filteredParses = filterPossessiveParses normalized parsedSentences
   in map snd filteredParses
@@ -89,7 +95,7 @@ parseFallbackAllEng bundle input =
 parseFallbackSentences ∷ GrammarBundle → String → [Sentence]
 parseFallbackSentences bundle input =
   let pgf            = fallbackPgf bundle
-      lang           = mkCId "AllEng"
+      mLang          = fallbackLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
       rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
@@ -97,7 +103,9 @@ parseFallbackSentences bundle input =
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
         | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = parse pgf lang typ parseInput
+      parses         = case mLang of
+        Just lang -> parse pgf lang typ parseInput
+        Nothing -> concat (parseAll pgf typ parseInput)
       parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
       filteredParses = filterPossessiveParses normalized parsedSentences
   in map fst filteredParses

@@ -22,6 +22,38 @@ cabal test
 cabal run
 ```
 
+## Corpus Testing (user-supplied .txt files)
+
+Use the corpus runner to measure controlled/fallback parse coverage over real text files without changing the existing Hspec suite.
+
+```bash
+# single files
+cabal run erato-corpus -- --file corpora/book1.txt --file corpora/book2.txt
+
+# recursively scan a directory of .txt files
+cabal run erato-corpus -- --dir corpora/children
+
+# enforce minimum rates for CI-style checks
+cabal run erato-corpus -- \
+  --dir corpora/children \
+  --max-sentences 2000 \
+  --stop-after-unparsed 100 \
+  --min-controlled-rate 0.60 \
+  --min-total-rate 0.90 \
+  --show-failures 30
+```
+
+The runner reports:
+- total sentence count,
+- controlled parse rate,
+- fallback parse rate,
+- unparsed rate,
+- first N unparsed examples with file/line context.
+
+Useful speed controls:
+- `--max-sentences N` to cap how much text is processed,
+- `--stop-after-unparsed N` to bail out early once enough failures are seen.
+
 ## Generate Lexicon (from Kaikki/Wiktionary)
 
 ### Python environment setup (full process)
