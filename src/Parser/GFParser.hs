@@ -386,6 +386,8 @@ relClausePossessiveCount (RelPrep _ np) = nounPhrasePossessiveCount np
 advPhrasePossessiveCount ∷ AdvPhrase → Int
 advPhrasePossessiveCount (PrepPhrase _ np) = nounPhrasePossessiveCount np
 advPhrasePossessiveCount (ClausePhrase _ sentence) = sentencePossessiveCount sentence
+advPhrasePossessiveCount (LexicalAdv _) = 0
+advPhrasePossessiveCount (ModifiedAdv _ adv) = advPhrasePossessiveCount adv
 
 validatedSentence ∷ Morpho → Expr → Maybe Sentence
 validatedSentence morpho expr =
@@ -511,10 +513,15 @@ verbPhraseBarePenalty (CoordVP _ a b) =
 advPhraseLexicalPenalty ∷ AdvPhrase → Int
 advPhraseLexicalPenalty (PrepPhrase _ np) = nounPhraseLexicalPenalty np
 advPhraseLexicalPenalty (ClausePhrase _ sentence) = sentenceLexicalPenalty sentence
+advPhraseLexicalPenalty (LexicalAdv adv) = functionWordPenalty adv
+advPhraseLexicalPenalty (ModifiedAdv modifier adv) =
+  functionWordPenalty modifier + advPhraseLexicalPenalty adv
 
 advPhraseBarePenalty ∷ AdvPhrase → Int
 advPhraseBarePenalty (PrepPhrase _ np) = nounPhraseBarePenalty np
 advPhraseBarePenalty (ClausePhrase _ sentence) = sentenceBareNounPenalty sentence
+advPhraseBarePenalty (LexicalAdv _) = 0
+advPhraseBarePenalty (ModifiedAdv _ adv) = advPhraseBarePenalty adv
 
 relClausePenalty ∷ RelClause → Int
 relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp

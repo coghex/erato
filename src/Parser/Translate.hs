@@ -214,6 +214,14 @@ parseAdv (List [Atom "AdvSubjS", subj, s]) = do
   subjTxt <- parseSubj subj
   clause <- parseSentence s
   pure (ClausePhrase subjTxt clause)
+parseAdv (List [Atom "AdvA", a]) =
+  LexicalAdv <$> parseA a
+parseAdv (List [Atom "ModAdv", ada, adv]) = do
+  modifier <- parseAdA ada
+  base <- parseAdv adv
+  pure (ModifiedAdv modifier base)
+parseAdv (Atom a)
+  | Just base <- stripSuffix "_Adv" a = Just (LexicalAdv base)
 parseAdv _ = Nothing
 
 parsePrep ∷ SExp → Maybe String
@@ -333,6 +341,14 @@ parseA ∷ SExp → Maybe String
 parseA (Atom a)
   | Just base <- stripSuffix "_A" a = Just base
 parseA _ = Nothing
+
+parseAdA ∷ SExp → Maybe String
+parseAdA (Atom "much_AdA") = Just "much"
+parseAdA (Atom "far_AdA") = Just "far"
+parseAdA (Atom "slightly_AdA") = Just "slightly"
+parseAdA (Atom "less_AdA") = Just "less"
+parseAdA (Atom "more_AdA") = Just "more"
+parseAdA _ = Nothing
 
 parsePN ∷ SExp → Maybe String
 parsePN (List [Atom "MkPN", pn]) = parsePN pn
@@ -699,6 +715,9 @@ renderAdv (PrepPhrase prep np) =
   unwords [fantasyToken prep, renderNP np]
 renderAdv (ClausePhrase subj sentence) =
   unwords [fantasyToken subj, renderEmbeddedSentence sentence]
+renderAdv (LexicalAdv adv) = fantasyToken adv
+renderAdv (ModifiedAdv modifier adv) =
+  unwords [fantasyToken modifier, renderAdv adv]
 
 renderPronoun ∷ Person → Number → PronounCase → String
 renderPronoun First Singular Subjective = "i"

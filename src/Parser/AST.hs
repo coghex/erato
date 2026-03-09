@@ -66,6 +66,8 @@ data RelClause
 data AdvPhrase
   = PrepPhrase String NounPhrase
   | ClausePhrase String Sentence
+  | LexicalAdv String
+  | ModifiedAdv String AdvPhrase
   deriving (Eq, Show)
 
 data VerbPhrase

@@ -32,6 +32,7 @@ import qualified Test.Modals as Modals
 import qualified Test.Contractions as Contractions
 import qualified Test.SubordinateClauses as SubordinateClauses
 import qualified Test.TokenizationHardening as TokenizationHardening
+import qualified Test.VerbAdverbs as VerbAdverbs
 
 main ∷ IO ()
 main = do
@@ -63,5 +64,6 @@ main = do
       Contractions.spec g
       SubordinateClauses.spec g
       TokenizationHardening.spec g
+      VerbAdverbs.spec g
       Questions.spec g
       Invalid.spec g
