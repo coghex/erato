@@ -352,6 +352,8 @@ skipAgreement (Perfective _) = True
 skipAgreement (VVComplement _ _) = True
 skipAgreement (V2VComplement _ _ _) = True
 skipAgreement (VSComplement _ _) = True
+skipAgreement (VPWithAdv vp _) = skipAgreement vp
+skipAgreement (CoordVP _ a b) = skipAgreement a && skipAgreement b
 skipAgreement _ = False
 
 questionAgreementOk ∷ VerbPhrase → VerbForm → Bool

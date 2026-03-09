@@ -33,3 +33,19 @@ spec grammars = describe "Adjectives" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") ["red"] "dog" Singular Nothing)
         (Transitive "eat" (CommonNoun (Just "the") ["red"] "food" Singular Nothing))
+
+  it "parses comparative adjective in NP: the bigger dog runs" $ do
+    let exprs = parseControlled grammars "the bigger dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["bigger"] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses superlative adjective in NP: the biggest dog runs" $ do
+    let exprs = parseControlled grammars "the biggest dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["biggest"] "dog" Singular Nothing)
+        (Intransitive "run")

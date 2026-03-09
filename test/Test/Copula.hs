@@ -57,3 +57,23 @@ spec grammars = describe "Copula (adjective predicate)" $ do
       Sentence Future Positive
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Copula "big")
+
+  it "parses comparative copula: the dog is bigger than the cat" $ do
+    let exprs = parseControlled grammars "the dog is bigger than the cat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (VPWithAdv
+          (Copula "bigger")
+          (PrepPhrase "than" (CommonNoun (Just "the") [] "cat" Singular Nothing)))
+
+  it "parses comparative copula question: is the dog bigger than the cat" $ do
+    let exprs = parseControlled grammars "is the dog bigger than the cat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Question Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (VPWithAdv
+          (Copula "bigger")
+          (PrepPhrase "than" (CommonNoun (Just "the") [] "cat" Singular Nothing)))
