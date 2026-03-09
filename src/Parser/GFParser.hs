@@ -40,7 +40,7 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -56,7 +56,7 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -76,7 +76,7 @@ parseFallbackAllEng bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -92,7 +92,7 @@ parseFallbackSentences bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -145,6 +145,10 @@ normalizeQuestionNegationOrder ∷ String → String
 normalizeQuestionNegationOrder input =
   unwords (rewriteQuestionNegationTokens (words input))
 
+normalizeObjectComparativeWh ∷ String → String
+normalizeObjectComparativeWh input =
+  unwords (rewriteObjectComparativeWhTokens (words input))
+
 rewriteQuestionNegationTokens ∷ [String] → [String]
 rewriteQuestionNegationTokens (wh : aux : "not" : det : noun : rest)
   | isWhToken wh && isInversionAux aux && isDetToken det =
@@ -153,6 +157,31 @@ rewriteQuestionNegationTokens (wh : aux : "not" : subj : rest)
   | isWhToken wh && isInversionAux aux =
       [wh, aux, subj, "not"] ++ rest
 rewriteQuestionNegationTokens tokens = tokens
+
+rewriteObjectComparativeWhTokens ∷ [String] → [String]
+rewriteObjectComparativeWhTokens (wh : noun : aux : rest)
+  | map toLower wh == "which"
+  , map toLower aux `elem` ["do", "does", "did"] =
+      case break (\t → map toLower t == "see") rest of
+        (subj, seeTok : runTok : compHead : compTail)
+          | not (null subj)
+          , map toLower runTok == "run"
+          , isComparativeAdverbLike (map toLower compHead) ->
+              [wh, noun, "that", inflectRelativeRun aux noun]
+                ++ (compHead : compTail) ++ [aux] ++ subj ++ [seeTok]
+        _ -> wh : noun : aux : rest
+rewriteObjectComparativeWhTokens tokens = tokens
+
+inflectRelativeRun ∷ String → String → String
+inflectRelativeRun aux noun
+  | map toLower aux == "did" = "ran"
+  | looksPlural noun = "run"
+  | otherwise = "runs"
+
+looksPlural ∷ String → Bool
+looksPlural noun =
+  let lower = map toLower noun
+  in length lower > 1 && "s" `isSuffixOf` lower && not ("ss" `isSuffixOf` lower)
 
 isWhToken ∷ String → Bool
 isWhToken token =

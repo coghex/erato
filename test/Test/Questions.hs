@@ -164,6 +164,32 @@ spec grammars = describe "Questions" $ do
           (CommonNoun (Just "the") [] "man" Singular Nothing)
           "see")
 
+  it "parses object which-question with VP complement: which dog does the man see run faster" $ do
+    let exprs = parseControlled grammars "which dog does the man see run faster"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular
+            (Just (RelVP (VPWithAdv
+              (Intransitive "run")
+              (LexicalAdv "faster")))))
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "see")
+
+  it "prefers object which-question with VP complement parse over fallback object readings" $ do
+    parsePreferredControlledSentence grammars "which dog does the man see run faster"
+      `shouldBe`
+        Just
+          (WhQuestion Present Positive
+            (ObjectDetWh Which
+              (CommonNoun (Just "which") [] "dog" Singular
+                (Just (RelVP (VPWithAdv
+                  (Intransitive "run")
+                  (LexicalAdv "faster")))))
+              (CommonNoun (Just "the") [] "man" Singular Nothing)
+              "see"))
+
   it "parses subject how-many question: how many dogs run" $ do
     let exprs = parseControlled grammars "how many dogs run"
     shouldParse exprs
