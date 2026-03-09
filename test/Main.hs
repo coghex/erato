@@ -29,6 +29,8 @@ import qualified Test.Existential as Existential
 import qualified Test.Imperative as Imperative
 import qualified Test.Questions as Questions
 import qualified Test.Modals as Modals
+import qualified Test.Contractions as Contractions
+import qualified Test.SubordinateClauses as SubordinateClauses
 
 main ∷ IO ()
 main = do
@@ -57,5 +59,7 @@ main = do
       Existential.spec g
       Imperative.spec g
       Modals.spec g
+      Contractions.spec g
+      SubordinateClauses.spec g
       Questions.spec g
       Invalid.spec g

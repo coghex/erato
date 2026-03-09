@@ -74,3 +74,19 @@ spec grammars = describe "Modals" $ do
       Question Present Positive
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (VVComplement "should" (Intransitive "run"))
+
+  it "parses modal perfect combination: the dog should have run" $ do
+    let exprs = parseControlled grammars "the dog should have run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (VVComplement "should" (Perfective (Intransitive "run")))
+
+  it "parses modal progressive combination: the dog should be running" $ do
+    let exprs = parseControlled grammars "the dog should be running"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (VVComplement "should" (Progressive (Intransitive "run")))

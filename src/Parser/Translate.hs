@@ -188,12 +188,22 @@ parseAdv (List [Atom "PrepNP", prep, np]) = do
   prepTxt <- parsePrep prep
   obj <- parseNP Objective np
   pure (PrepPhrase prepTxt obj)
+parseAdv (List [Atom "AdvSubjS", subj, s]) = do
+  subjTxt <- parseSubj subj
+  clause <- parseSentence s
+  pure (ClausePhrase subjTxt clause)
 parseAdv _ = Nothing
 
 parsePrep ∷ SExp → Maybe String
 parsePrep (Atom a)
   | Just base <- stripSuffix "_Prep" a = Just base
 parsePrep _ = Nothing
+
+parseSubj ∷ SExp → Maybe String
+parseSubj (Atom "because_Subj") = Just "because"
+parseSubj (Atom "if_Subj")      = Just "if"
+parseSubj (Atom "when_Subj")    = Just "when"
+parseSubj _                     = Nothing
 
 parseRP ∷ SExp → Maybe ()
 parseRP (Atom "who_RP")  = Just ()
@@ -299,6 +309,7 @@ skipAgreement ∷ VerbPhrase → Bool
 skipAgreement (Copula _) = True
 skipAgreement (Passive _) = True
 skipAgreement (Progressive _) = True
+skipAgreement (Perfective _) = True
 skipAgreement (VVComplement _ _) = True
 skipAgreement (V2VComplement _ _ _) = True
 skipAgreement (VSComplement _ _) = True
@@ -444,6 +455,9 @@ parseVP (List [Atom "PassV2VP", v2]) = do
 parseVP (List [Atom "ProgressVP", vp]) = do
   (baseVP, _) <- parseVP vp
   pure (Progressive baseVP, BaseForm)
+parseVP (List [Atom "PerfectVP", vp]) = do
+  (baseVP, _) <- parseVP vp
+  pure (Perfective baseVP, BaseForm)
 parseVP _ = Nothing
 
 parseConj ∷ SExp → Maybe Conj
@@ -492,6 +506,7 @@ renderVP (VSComplement v sentence) =
 renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
 renderVP (Passive v) = unwords [fantasyToken "be", fantasyToken v]
 renderVP (Progressive vp) = unwords [fantasyToken "be", renderVP vp]
+renderVP (Perfective vp) = unwords [fantasyToken "have", renderVP vp]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
 
 renderInfinitiveVP ∷ VerbPhrase → String
@@ -549,6 +564,8 @@ renderRelClause (NegRelV2 v obj) =
 renderAdv ∷ AdvPhrase → String
 renderAdv (PrepPhrase prep np) =
   unwords [fantasyToken prep, renderNP np]
+renderAdv (ClausePhrase subj sentence) =
+  unwords [fantasyToken subj, renderEmbeddedSentence sentence]
 
 renderPronoun ∷ Person → Number → PronounCase → String
 renderPronoun First Singular Subjective = "i"

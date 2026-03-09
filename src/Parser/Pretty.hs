@@ -145,6 +145,11 @@ renderVP indent vp =
         [ indent <> "|- Progressive"
         , renderVP (indent <> "   ") base
         ]
+    Perfective base ->
+      unlines
+        [ indent <> "|- Perfective"
+        , renderVP (indent <> "   ") base
+        ]
     VPWithAdv base adv ->
       unlines
         [ indent <> "|- VPWithAdv"

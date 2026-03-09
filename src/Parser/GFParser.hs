@@ -40,7 +40,7 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun input
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -56,7 +56,7 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun input
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -76,7 +76,7 @@ parseFallbackAllEng bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun input
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -92,7 +92,7 @@ parseFallbackSentences bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun input
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions input)
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -110,6 +110,63 @@ data NormalizedInput = NormalizedInput
   { normalizedInput        ∷ String
   , possessiveMarkerCount ∷ Int
   }
+
+normalizeContractions ∷ String → String
+normalizeContractions input =
+  unwords (concatMap normalizeContractionToken (words input))
+
+normalizeContractionToken ∷ String → [String]
+normalizeContractionToken token =
+  case contractionExpansion token of
+    Just expanded -> expanded
+    Nothing       -> [token]
+
+contractionExpansion ∷ String → Maybe [String]
+contractionExpansion token =
+  let normalized = canonicalizeApostrophes token
+      lower = map toLower normalized
+  in case lower of
+       "can't"   -> Just ["can", "not"]
+       "cannot"  -> Just ["can", "not"]
+       "won't"   -> Just ["will", "not"]
+       "shan't"  -> Just ["shall", "not"]
+       "i'm"     -> Just ["I", "am"]
+       "you're"  -> Just ["you", "are"]
+       "he's"    -> Just ["he", "is"]
+       "she's"   -> Just ["she", "is"]
+       "it's"    -> Just ["it", "is"]
+       "we're"   -> Just ["we", "are"]
+       "they're" -> Just ["they", "are"]
+       "that's"  -> Just ["that", "is"]
+       "there's" -> Just ["there", "is"]
+       "what's"  -> Just ["what", "is"]
+       "who's"   -> Just ["who", "is"]
+       "where's" -> Just ["where", "is"]
+       "i've"    -> Just ["I", "have"]
+       "you've"  -> Just ["you", "have"]
+       "we've"   -> Just ["we", "have"]
+       "they've" -> Just ["they", "have"]
+       "i'll"    -> Just ["I", "will"]
+       "you'll"  -> Just ["you", "will"]
+       "he'll"   -> Just ["he", "will"]
+       "she'll"  -> Just ["she", "will"]
+       "it'll"   -> Just ["it", "will"]
+       "we'll"   -> Just ["we", "will"]
+       "they'll" -> Just ["they", "will"]
+       "i'd"     -> Just ["I", "would"]
+       "you'd"   -> Just ["you", "would"]
+       "he'd"    -> Just ["he", "would"]
+       "she'd"   -> Just ["she", "would"]
+       "it'd"    -> Just ["it", "would"]
+       "we'd"    -> Just ["we", "would"]
+       "they'd"  -> Just ["they", "would"]
+       _ | Just stem <- stripSuffix "n't" lower ->
+             Just [stem, "not"]
+         | otherwise ->
+             Nothing
+
+canonicalizeApostrophes ∷ String → String
+canonicalizeApostrophes = map (\c -> if c == '’' then '\'' else c)
 
 normalizePossessives ∷ String → NormalizedInput
 normalizePossessives input =
@@ -235,6 +292,7 @@ verbPhrasePossessiveCount (VSComplement _ sentence) = sentencePossessiveCount se
 verbPhrasePossessiveCount (Copula _) = 0
 verbPhrasePossessiveCount (Passive _) = 0
 verbPhrasePossessiveCount (Progressive vp) = verbPhrasePossessiveCount vp
+verbPhrasePossessiveCount (Perfective vp) = verbPhrasePossessiveCount vp
 verbPhrasePossessiveCount (VPWithAdv vp adv) = verbPhrasePossessiveCount vp + advPhrasePossessiveCount adv
 verbPhrasePossessiveCount (CoordVP _ a b) = verbPhrasePossessiveCount a + verbPhrasePossessiveCount b
 
@@ -251,6 +309,7 @@ relClausePossessiveCount (NegRelV2 _ np) = nounPhrasePossessiveCount np
 
 advPhrasePossessiveCount ∷ AdvPhrase → Int
 advPhrasePossessiveCount (PrepPhrase _ np) = nounPhrasePossessiveCount np
+advPhrasePossessiveCount (ClausePhrase _ sentence) = sentencePossessiveCount sentence
 
 validatedSentence ∷ Morpho → Expr → Maybe Sentence
 validatedSentence morpho expr =
@@ -343,6 +402,7 @@ verbPhraseLexicalPenalty (VSComplement verb sentence) =
 verbPhraseLexicalPenalty (Copula adj) = functionWordPenalty adj
 verbPhraseLexicalPenalty (Passive verb) = functionWordPenalty verb
 verbPhraseLexicalPenalty (Progressive vp) = verbPhraseLexicalPenalty vp
+verbPhraseLexicalPenalty (Perfective vp) = verbPhraseLexicalPenalty vp
 verbPhraseLexicalPenalty (VPWithAdv vp adv) =
   verbPhraseLexicalPenalty vp + advPhraseLexicalPenalty adv
 verbPhraseLexicalPenalty (CoordVP _ a b) =
@@ -358,6 +418,7 @@ verbPhraseBarePenalty (VSComplement _ sentence) = sentenceBareNounPenalty senten
 verbPhraseBarePenalty (Copula _) = 0
 verbPhraseBarePenalty (Passive _) = 0
 verbPhraseBarePenalty (Progressive vp) = verbPhraseBarePenalty vp
+verbPhraseBarePenalty (Perfective vp) = verbPhraseBarePenalty vp
 verbPhraseBarePenalty (VPWithAdv vp adv) =
   verbPhraseBarePenalty vp + advPhraseBarePenalty adv
 verbPhraseBarePenalty (CoordVP _ a b) =
@@ -365,9 +426,11 @@ verbPhraseBarePenalty (CoordVP _ a b) =
 
 advPhraseLexicalPenalty ∷ AdvPhrase → Int
 advPhraseLexicalPenalty (PrepPhrase _ np) = nounPhraseLexicalPenalty np
+advPhraseLexicalPenalty (ClausePhrase _ sentence) = sentenceLexicalPenalty sentence
 
 advPhraseBarePenalty ∷ AdvPhrase → Int
 advPhraseBarePenalty (PrepPhrase _ np) = nounPhraseBarePenalty np
+advPhraseBarePenalty (ClausePhrase _ sentence) = sentenceBareNounPenalty sentence
 
 relClausePenalty ∷ RelClause → Int
 relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp

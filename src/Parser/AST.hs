@@ -64,6 +64,7 @@ data RelClause
 
 data AdvPhrase
   = PrepPhrase String NounPhrase
+  | ClausePhrase String Sentence
   deriving (Eq, Show)
 
 data VerbPhrase
@@ -75,6 +76,7 @@ data VerbPhrase
   | Copula String
   | Passive String
   | Progressive VerbPhrase
+  | Perfective VerbPhrase
   | VPWithAdv VerbPhrase AdvPhrase
   | CoordVP Conj VerbPhrase VerbPhrase
   deriving (Eq, Show)
