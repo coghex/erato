@@ -405,10 +405,11 @@ preferSentence [] = Nothing
 preferSentence sentences =
   Just (minimumBy (comparing sentencePenalty) sentences)
 
-sentencePenalty ∷ Sentence → (Int, Int, Int)
+sentencePenalty ∷ Sentence → (Int, Int, Int, Int)
 sentencePenalty sentence =
   ( sentenceFormPenalty sentence
   , sentenceLexicalPenalty sentence
+  , sentenceDisambiguationPenalty sentence
   , sentenceBareNounPenalty sentence
   )
 
@@ -429,6 +430,38 @@ sentenceBareNounPenalty (Question _ _ subj vp) = nounPhraseBarePenalty subj + ve
 sentenceBareNounPenalty (WhQuestion _ _ whClause) = whClauseBarePenalty whClause
 sentenceBareNounPenalty (Existential _ _ np)   = nounPhraseBarePenalty np
 sentenceBareNounPenalty (Imperative _ vp)      = verbPhraseBarePenalty vp
+
+sentenceDisambiguationPenalty ∷ Sentence → Int
+sentenceDisambiguationPenalty (Sentence _ _ subj vp) =
+  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
+sentenceDisambiguationPenalty (Question _ _ subj vp) =
+  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
+sentenceDisambiguationPenalty (WhQuestion _ _ whClause) =
+  whClauseDisambiguationPenalty whClause
+sentenceDisambiguationPenalty (Existential _ _ np) =
+  nounPhraseDisambiguationPenalty np
+sentenceDisambiguationPenalty (Imperative _ vp) =
+  verbPhraseDisambiguationPenalty vp
+
+whClauseDisambiguationPenalty ∷ WhClause → Int
+whClauseDisambiguationPenalty (SubjectWh _ vp) = verbPhraseDisambiguationPenalty vp
+whClauseDisambiguationPenalty (ObjectWh _ subj _) = nounPhraseDisambiguationPenalty subj
+whClauseDisambiguationPenalty (SubjectDetWh _ queried vp) =
+  nounPhraseDisambiguationPenalty queried + verbPhraseDisambiguationPenalty vp
+whClauseDisambiguationPenalty (ObjectDetWh _ queried subj _) =
+  nounPhraseDisambiguationPenalty queried + nounPhraseDisambiguationPenalty subj
+whClauseDisambiguationPenalty (AdvWh _ subj vp) =
+  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
+
+nounPhraseDisambiguationPenalty ∷ NounPhrase → Int
+nounPhraseDisambiguationPenalty (ProperNoun _) = 0
+nounPhraseDisambiguationPenalty (Pronoun _ _ _) = 0
+nounPhraseDisambiguationPenalty (PossessedNoun owner _ _ _ rel) =
+  nounPhraseDisambiguationPenalty owner + maybe 0 relClauseDisambiguationPenalty rel
+nounPhraseDisambiguationPenalty (CommonNoun _ _ _ _ rel) =
+  maybe 0 relClauseDisambiguationPenalty rel
+nounPhraseDisambiguationPenalty (CoordNP _ a b) =
+  nounPhraseDisambiguationPenalty a + nounPhraseDisambiguationPenalty b
 
 whClauseLexicalPenalty ∷ WhClause → Int
 whClauseLexicalPenalty (SubjectWh _ vp) = verbPhraseLexicalPenalty vp
@@ -510,6 +543,23 @@ verbPhraseBarePenalty (VPWithAdv vp adv) =
 verbPhraseBarePenalty (CoordVP _ a b) =
   verbPhraseBarePenalty a + verbPhraseBarePenalty b
 
+verbPhraseDisambiguationPenalty ∷ VerbPhrase → Int
+verbPhraseDisambiguationPenalty (Intransitive _) = 0
+verbPhraseDisambiguationPenalty (Transitive _ obj) =
+  transitiveObjectAmbiguityPenalty obj + nounPhraseDisambiguationPenalty obj
+verbPhraseDisambiguationPenalty (VVComplement _ vp) = verbPhraseDisambiguationPenalty vp
+verbPhraseDisambiguationPenalty (V2VComplement _ obj vp) =
+  nounPhraseDisambiguationPenalty obj + verbPhraseDisambiguationPenalty vp
+verbPhraseDisambiguationPenalty (VSComplement _ sentence) = sentenceDisambiguationPenalty sentence
+verbPhraseDisambiguationPenalty (Copula _) = 0
+verbPhraseDisambiguationPenalty (Passive _) = 0
+verbPhraseDisambiguationPenalty (Progressive vp) = verbPhraseDisambiguationPenalty vp
+verbPhraseDisambiguationPenalty (Perfective vp) = verbPhraseDisambiguationPenalty vp
+verbPhraseDisambiguationPenalty (VPWithAdv vp adv) =
+  verbPhraseDisambiguationPenalty vp + advPhraseDisambiguationPenalty adv
+verbPhraseDisambiguationPenalty (CoordVP _ a b) =
+  verbPhraseDisambiguationPenalty a + verbPhraseDisambiguationPenalty b
+
 advPhraseLexicalPenalty ∷ AdvPhrase → Int
 advPhraseLexicalPenalty (PrepPhrase _ np) = nounPhraseLexicalPenalty np
 advPhraseLexicalPenalty (ClausePhrase _ sentence) = sentenceLexicalPenalty sentence
@@ -522,6 +572,12 @@ advPhraseBarePenalty (PrepPhrase _ np) = nounPhraseBarePenalty np
 advPhraseBarePenalty (ClausePhrase _ sentence) = sentenceBareNounPenalty sentence
 advPhraseBarePenalty (LexicalAdv _) = 0
 advPhraseBarePenalty (ModifiedAdv _ adv) = advPhraseBarePenalty adv
+
+advPhraseDisambiguationPenalty ∷ AdvPhrase → Int
+advPhraseDisambiguationPenalty (PrepPhrase _ np) = nounPhraseDisambiguationPenalty np
+advPhraseDisambiguationPenalty (ClausePhrase _ sentence) = sentenceDisambiguationPenalty sentence
+advPhraseDisambiguationPenalty (LexicalAdv _) = 0
+advPhraseDisambiguationPenalty (ModifiedAdv _ adv) = advPhraseDisambiguationPenalty adv
 
 relClausePenalty ∷ RelClause → Int
 relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp
@@ -536,6 +592,33 @@ relClauseBarePenalty (NegRelVP vp) = verbPhraseBarePenalty vp
 relClauseBarePenalty (RelV2 _ np) = nounPhraseBarePenalty np
 relClauseBarePenalty (NegRelV2 _ np) = nounPhraseBarePenalty np
 relClauseBarePenalty (RelPrep _ np) = nounPhraseBarePenalty np
+
+relClauseDisambiguationPenalty ∷ RelClause → Int
+relClauseDisambiguationPenalty (RelVP vp) = verbPhraseDisambiguationPenalty vp
+relClauseDisambiguationPenalty (NegRelVP vp) = verbPhraseDisambiguationPenalty vp
+relClauseDisambiguationPenalty (RelV2 _ np) = nounPhraseDisambiguationPenalty np
+relClauseDisambiguationPenalty (NegRelV2 _ np) = nounPhraseDisambiguationPenalty np
+relClauseDisambiguationPenalty (RelPrep _ np) = nounPhraseDisambiguationPenalty np
+
+transitiveObjectAmbiguityPenalty ∷ NounPhrase → Int
+transitiveObjectAmbiguityPenalty (CommonNoun Nothing adjs noun Singular Nothing)
+  | looksLikeAdverbialObject adjs noun = 3
+transitiveObjectAmbiguityPenalty _ = 0
+
+looksLikeAdverbialObject ∷ [String] → String → Bool
+looksLikeAdverbialObject adjs noun =
+  isComparativeAdverbLike nounLower || hasDegreeModifierAdj adjsLower
+  where
+    nounLower = map toLower noun
+    adjsLower = map (map toLower) adjs
+    hasDegreeModifierAdj xs =
+      any (`elem` ["much", "far", "slightly", "less", "more"]) xs
+        && nounLower `elem` ["quick", "slow", "fast", "hard", "easy", "late", "early"]
+
+isComparativeAdverbLike ∷ String → Bool
+isComparativeAdverbLike token =
+  token `elem` ["better", "worse", "faster", "slower", "harder", "sooner", "later"]
+    || (length token > 3 && "er" `isSuffixOf` token && all isAlpha token)
 
 functionWordPenalty ∷ String → Int
 functionWordPenalty word
