@@ -178,6 +178,23 @@ renderWhClause indent whClause =
         , renderNP (indent <> "   ") subj
         , indent <> "\\- verb: " <> verb
         ]
+    SubjectDetWh qword queried vp ->
+      unlines
+        [ indent <> "|- SubjectDetWh (" <> show qword <> ")"
+        , indent <> "|- queried"
+        , renderNP (indent <> "   ") queried
+        , indent <> "\\- verb"
+        , renderVP (indent <> "   ") vp
+        ]
+    ObjectDetWh qword queried subj verb ->
+      unlines
+        [ indent <> "|- ObjectDetWh (" <> show qword <> ")"
+        , indent <> "|- queried"
+        , renderNP (indent <> "   ") queried
+        , indent <> "|- subject"
+        , renderNP (indent <> "   ") subj
+        , indent <> "\\- verb: " <> verb
+        ]
     AdvWh qword subj vp ->
       unlines
         [ indent <> "|- AdvWh (" <> show qword <> ")"

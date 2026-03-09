@@ -114,6 +114,57 @@ spec grammars = describe "Questions" $ do
           (CommonNoun (Just "the") [] "man" Singular Nothing)
           "see")
 
+  it "parses subject which-question: which dog runs" $ do
+    let exprs = parseControlled grammars "which dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular Nothing)
+          (Intransitive "run"))
+
+  it "parses plural subject which-question: which dogs run" $ do
+    let exprs = parseControlled grammars "which dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Plural Nothing)
+          (Intransitive "run"))
+
+  it "parses object which-question: which dog does the man see" $ do
+    let exprs = parseControlled grammars "which dog does the man see"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular Nothing)
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "see")
+
+  it "parses subject how-many question: how many dogs run" $ do
+    let exprs = parseControlled grammars "how many dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectDetWh HowMany
+          (CommonNoun (Just "how many") [] "dog" Plural Nothing)
+          (Intransitive "run"))
+
+  it "parses object how-many question: how many dogs does the man see" $ do
+    let exprs = parseControlled grammars "how many dogs does the man see"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh HowMany
+          (CommonNoun (Just "how many") [] "dog" Plural Nothing)
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "see")
+
+  it "rejects singular noun in how-many question: how many dog runs" $ do
+    let exprs = parseControlled grammars "how many dog runs"
+    shouldReject exprs
+
   it "parses adverb wh-question: where does the dog run" $ do
     let exprs = parseControlled grammars "where does the dog run"
     shouldParse exprs

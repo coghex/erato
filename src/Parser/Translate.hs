@@ -100,6 +100,21 @@ parseQCl (List [Atom "QuestV2", ip, np, v2]) = do
   if vform == BaseForm
     then pure (ParsedWhQuestion (ObjectWh qword subj lemma))
     else Nothing
+parseQCl (List [Atom "QuestIDetVP", idet, n, vp]) = do
+  qword <- parseQuestionIDet idet
+  queried <- parseQuestionDetNP idet n
+  (vps, vform) <- parseVP vp
+  if subjectQuestionAgreementOk vps vform
+    then pure (ParsedWhQuestion (SubjectDetWh qword queried vps))
+    else Nothing
+parseQCl (List [Atom "QuestIDetV2", idet, n, np, v2]) = do
+  qword <- parseQuestionIDet idet
+  queried <- parseQuestionDetNP idet n
+  subj <- parseNP Subjective np
+  (lemma, vform) <- parseV2 v2
+  if vform == BaseForm
+    then pure (ParsedWhQuestion (ObjectDetWh qword queried subj lemma))
+    else Nothing
 parseQCl (List [Atom "QuestIAdv", iadv, cl]) = do
   qword <- parseQuestionIAdv iadv
   (subj, vp, vform) <- parseCl cl
@@ -221,6 +236,27 @@ parseQuestionIAdv (Atom "when_IAdv")  = Just When
 parseQuestionIAdv (Atom "why_IAdv")   = Just Why
 parseQuestionIAdv (Atom "how_IAdv")   = Just How
 parseQuestionIAdv _ = Nothing
+
+parseQuestionIDet ∷ SExp → Maybe QuestionWord
+parseQuestionIDet (Atom "whichSg_IDet") = Just Which
+parseQuestionIDet (Atom "whichPl_IDet") = Just Which
+parseQuestionIDet (Atom "howMany_IDet") = Just HowMany
+parseQuestionIDet _ = Nothing
+
+parseQuestionDetInfo ∷ SExp → Maybe (String, Maybe Number)
+parseQuestionDetInfo (Atom "whichSg_IDet") = Just ("which", Just Singular)
+parseQuestionDetInfo (Atom "whichPl_IDet") = Just ("which", Just Plural)
+parseQuestionDetInfo (Atom "howMany_IDet") = Just ("how many", Just Plural)
+parseQuestionDetInfo _ = Nothing
+
+parseQuestionDetNP ∷ SExp → SExp → Maybe NounPhrase
+parseQuestionDetNP idet n = do
+  (detText, detNum) <- parseQuestionDetInfo idet
+  (nounNum, adjs, noun, rel) <- parseN n
+  let finalNum = maybe nounNum id detNum
+  case detNum of
+    Just dnum | dnum /= nounNum -> Nothing
+    _ -> pure (CommonNoun (Just detText) adjs noun finalNum rel)
 
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseDetInfo (Atom "the_Det")   = Just ("the", Just Singular)
@@ -524,6 +560,10 @@ renderWhClause (SubjectWh qword vp) =
   unwords [renderQuestionWord qword, renderVP vp]
 renderWhClause (ObjectWh qword subj verb) =
   unwords [renderQuestionWord qword, renderNP subj, fantasyToken verb]
+renderWhClause (SubjectDetWh _ queried vp) =
+  unwords [renderNP queried, renderVP vp]
+renderWhClause (ObjectDetWh _ queried subj verb) =
+  unwords [renderNP queried, renderNP subj, fantasyToken verb]
 renderWhClause (AdvWh qword subj vp) =
   unwords [renderQuestionWord qword, renderNP subj, renderVP vp]
 
@@ -534,6 +574,8 @@ renderQuestionWord Where = fantasyToken "where"
 renderQuestionWord When = fantasyToken "when"
 renderQuestionWord Why = fantasyToken "why"
 renderQuestionWord How = fantasyToken "how"
+renderQuestionWord Which = fantasyToken "which"
+renderQuestionWord HowMany = unwords [fantasyToken "how", fantasyToken "many"]
 
 renderConj ∷ Conj → String
 renderConj And = fantasyToken "and"

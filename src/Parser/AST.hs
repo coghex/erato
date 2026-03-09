@@ -31,7 +31,7 @@ data Number = Singular | Plural
 data PronounCase = Subjective | Objective
   deriving (Eq, Show)
 
-data QuestionWord = Who | What | Where | When | Why | How
+data QuestionWord = Who | What | Where | When | Why | How | Which | HowMany
   deriving (Eq, Show)
 
 data Conj = And | Or
@@ -84,6 +84,8 @@ data VerbPhrase
 data WhClause
   = SubjectWh QuestionWord VerbPhrase
   | ObjectWh QuestionWord NounPhrase String
+  | SubjectDetWh QuestionWord NounPhrase VerbPhrase
+  | ObjectDetWh QuestionWord NounPhrase NounPhrase String
   | AdvWh QuestionWord NounPhrase VerbPhrase
   deriving (Eq, Show)
 

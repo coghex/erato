@@ -325,6 +325,10 @@ verbPhrasePossessiveCount (CoordVP _ a b) = verbPhrasePossessiveCount a + verbPh
 whClausePossessiveCount ∷ WhClause → Int
 whClausePossessiveCount (SubjectWh _ vp) = verbPhrasePossessiveCount vp
 whClausePossessiveCount (ObjectWh _ subj _) = nounPhrasePossessiveCount subj
+whClausePossessiveCount (SubjectDetWh _ queried vp) =
+  nounPhrasePossessiveCount queried + verbPhrasePossessiveCount vp
+whClausePossessiveCount (ObjectDetWh _ queried subj _) =
+  nounPhrasePossessiveCount queried + nounPhrasePossessiveCount subj
 whClausePossessiveCount (AdvWh _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
 
 relClausePossessiveCount ∷ RelClause → Int
@@ -382,12 +386,20 @@ whClauseLexicalPenalty ∷ WhClause → Int
 whClauseLexicalPenalty (SubjectWh _ vp) = verbPhraseLexicalPenalty vp
 whClauseLexicalPenalty (ObjectWh _ subj verb) =
   nounPhraseLexicalPenalty subj + functionWordPenalty verb
+whClauseLexicalPenalty (SubjectDetWh _ queried vp) =
+  nounPhraseLexicalPenalty queried + verbPhraseLexicalPenalty vp
+whClauseLexicalPenalty (ObjectDetWh _ queried subj verb) =
+  nounPhraseLexicalPenalty queried + nounPhraseLexicalPenalty subj + functionWordPenalty verb
 whClauseLexicalPenalty (AdvWh _ subj vp) =
   nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
 
 whClauseBarePenalty ∷ WhClause → Int
 whClauseBarePenalty (SubjectWh _ vp) = verbPhraseBarePenalty vp
 whClauseBarePenalty (ObjectWh _ subj _) = nounPhraseBarePenalty subj
+whClauseBarePenalty (SubjectDetWh _ queried vp) =
+  nounPhraseBarePenalty queried + verbPhraseBarePenalty vp
+whClauseBarePenalty (ObjectDetWh _ queried subj _) =
+  nounPhraseBarePenalty queried + nounPhraseBarePenalty subj
 whClauseBarePenalty (AdvWh _ subj vp) =
   nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
 
