@@ -11,7 +11,7 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
-import Data.Char (isAlphaNum, isUpper, toLower)
+import Data.Char (isAlpha, isAlphaNum, isUpper, toLower)
 import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
@@ -40,7 +40,7 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -56,7 +56,7 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -76,7 +76,7 @@ parseFallbackAllEng bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -92,7 +92,7 @@ parseFallbackSentences bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeContractions (tokenizeInput input))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -140,6 +140,45 @@ tokenHasPluralPossessiveQuote token =
 normalizeContractions ∷ String → String
 normalizeContractions input =
   unwords (concatMap normalizeContractionToken (words input))
+
+normalizeDegreeModifiers ∷ String → String
+normalizeDegreeModifiers input =
+  unwords (collapseDegreeModifierTokens (words input))
+
+collapseDegreeModifierTokens ∷ [String] → [String]
+collapseDegreeModifierTokens [] = []
+collapseDegreeModifierTokens [token] = [token]
+collapseDegreeModifierTokens (first : second : third : rest)
+  | isALotDegreeModifier first second && isDegreeHead third =
+      third : collapseDegreeModifierTokens rest
+  | isABitDegreeModifier first second && isDegreeHead third =
+      third : collapseDegreeModifierTokens rest
+collapseDegreeModifierTokens (first : second : rest)
+  | isSimpleDegreeModifier first && isDegreeHead second =
+      second : collapseDegreeModifierTokens rest
+  | otherwise =
+      first : collapseDegreeModifierTokens (second : rest)
+
+isSimpleDegreeModifier ∷ String → Bool
+isSimpleDegreeModifier token =
+  map toLower token `elem` ["much", "far", "slightly"]
+
+isALotDegreeModifier ∷ String → String → Bool
+isALotDegreeModifier first second =
+  map toLower first == "a" && map toLower second == "lot"
+
+isABitDegreeModifier ∷ String → String → Bool
+isABitDegreeModifier first second =
+  map toLower first == "a" && map toLower second == "bit"
+
+isDegreeHead ∷ String → Bool
+isDegreeHead token =
+  let lower = map toLower token
+  in lower `elem` ["more", "fewer", "less"] || isComparativeAdjectiveToken lower
+
+isComparativeAdjectiveToken ∷ String → Bool
+isComparativeAdjectiveToken token =
+  length token > 3 && "er" `isSuffixOf` token && all isAlpha token
 
 normalizeContractionToken ∷ String → [String]
 normalizeContractionToken token =

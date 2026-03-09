@@ -42,6 +42,14 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "more") [] "dog" Plural Nothing)
         (Intransitive "run")
 
+  it "parses degree-modified more: a lot more dogs run" $ do
+    let exprs = parseControlled grammars "a lot more dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "more") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
   it "parses fewer with plural noun: fewer dogs run" $ do
     let exprs = parseControlled grammars "fewer dogs run"
     shouldParse exprs
@@ -50,8 +58,24 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "fewer") [] "dog" Plural Nothing)
         (Intransitive "run")
 
+  it "parses degree-modified fewer: far fewer dogs run" $ do
+    let exprs = parseControlled grammars "far fewer dogs run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "fewer") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
   it "parses less with singular noun object: the dog eats less food" $ do
     let exprs = parseControlled grammars "the dog eats less food"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Transitive "eat" (CommonNoun (Just "less") [] "food" Singular Nothing))
+
+  it "parses degree-modified less: the dog eats much less food" $ do
+    let exprs = parseControlled grammars "the dog eats much less food"
     shouldParse exprs
     exprs `shouldParseAs`
       Sentence Present Positive
