@@ -16,7 +16,7 @@ module Parser.AST
   , Conj(..)
   ) where
 
-data Tense = Present | Past | Future
+data Tense = Present | Past | Future | Perfect
   deriving (Eq, Show)
 
 data Polarity = Positive | Negative

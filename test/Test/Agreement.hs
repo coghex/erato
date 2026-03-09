@@ -49,3 +49,11 @@ spec grammars = describe "Agreement" $ do
       Sentence Future Positive
         (CommonNoun (Just "the") [] "dog" Plural Nothing)
         (Intransitive "run")
+
+  it "allows perfect-tense plural without lexical agreement changes: the dogs have run" $ do
+    let exprs = parseControlled grammars "the dogs have run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
+        (Intransitive "run")

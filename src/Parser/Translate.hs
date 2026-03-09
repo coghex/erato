@@ -130,6 +130,7 @@ parseTense ∷ SExp → Maybe Tense
 parseTense (Atom "TPres") = Just Present
 parseTense (Atom "TPast") = Just Past
 parseTense (Atom "TFut")  = Just Future
+parseTense (Atom "TPerf") = Just Perfect
 parseTense _              = Nothing
 
 parsePolarity ∷ SExp → Maybe Polarity
@@ -327,6 +328,9 @@ agreementOk Past Positive _ _ = True
 agreementOk Past Negative _ _ = True
 agreementOk Future Positive _ _ = True
 agreementOk Future Negative _ _ = True
+-- Present-perfect uses an agreeing auxiliary with a non-finite lexical verb.
+agreementOk Perfect Positive _ vform = vform == BaseForm
+agreementOk Perfect Negative _ vform = vform == BaseForm
 
 translateSentence ∷ Sentence → String
 translateSentence (Sentence t p subj vp) =
@@ -524,6 +528,7 @@ renderTense ∷ Tense → String
 renderTense Present = "ta"
 renderTense Past    = "na"
 renderTense Future  = "va"
+renderTense Perfect = "sa"
 
 renderPolarity ∷ Polarity → String
 renderPolarity Positive = "ke"

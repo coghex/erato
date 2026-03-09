@@ -42,6 +42,22 @@ spec grammars = describe "Questions" $ do
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
 
+  it "parses perfect question: has the dog run" $ do
+    let exprs = parseControlled grammars "has the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Question Perfect Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses negative perfect question: has the dog not run" $ do
+    let exprs = parseControlled grammars "has the dog not run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Question Perfect Negative
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
   it "parses copula question: is the dog big" $ do
     let exprs = parseControlled grammars "is the dog big"
     shouldParse exprs

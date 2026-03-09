@@ -89,3 +89,35 @@ spec grammars = describe "Tense" $ do
           (Sentence Future Positive
             (Pronoun First Singular Subjective)
             (Intransitive "run"))
+
+  it "parses perfect tense: the dog has run" $ do
+    let exprs = parseControlled grammars "the dog has run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses perfect tense plural: the dogs have run" $ do
+    let exprs = parseControlled grammars "the dogs have run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (CommonNoun (Just "the") [] "dog" Plural Nothing)
+        (Intransitive "run")
+
+  it "parses perfect tense transitive: the man has eaten the food" $ do
+    let exprs = parseControlled grammars "the man has eaten the food"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
+        (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
+
+  it "parses perfect tense negation: the dog has not run" $ do
+    let exprs = parseControlled grammars "the dog has not run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Negative
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
