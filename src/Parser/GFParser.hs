@@ -544,9 +544,12 @@ verbPhraseBarePenalty (CoordVP _ a b) =
   verbPhraseBarePenalty a + verbPhraseBarePenalty b
 
 verbPhraseDisambiguationPenalty ∷ VerbPhrase → Int
-verbPhraseDisambiguationPenalty (Intransitive _) = 0
-verbPhraseDisambiguationPenalty (Transitive _ obj) =
-  transitiveObjectAmbiguityPenalty obj + nounPhraseDisambiguationPenalty obj
+verbPhraseDisambiguationPenalty (Intransitive verb) =
+  ambiguousVerbHeadPenalty verb
+verbPhraseDisambiguationPenalty (Transitive verb obj) =
+  ambiguousVerbHeadPenalty verb
+    + transitiveObjectAmbiguityPenalty obj
+    + nounPhraseDisambiguationPenalty obj
 verbPhraseDisambiguationPenalty (VVComplement _ vp) = verbPhraseDisambiguationPenalty vp
 verbPhraseDisambiguationPenalty (V2VComplement _ obj vp) =
   nounPhraseDisambiguationPenalty obj + verbPhraseDisambiguationPenalty vp
@@ -613,12 +616,20 @@ looksLikeAdverbialObject adjs noun =
     adjsLower = map (map toLower) adjs
     hasDegreeModifierAdj xs =
       any (`elem` ["much", "far", "slightly", "less", "more"]) xs
-        && nounLower `elem` ["quick", "slow", "fast", "hard", "easy", "late", "early"]
+        && (isComparativeAdverbLike nounLower
+            || nounLower `elem` ["quick", "slow", "fast", "hard", "easy", "late", "early"])
 
 isComparativeAdverbLike ∷ String → Bool
 isComparativeAdverbLike token =
   token `elem` ["better", "worse", "faster", "slower", "harder", "sooner", "later"]
     || (length token > 3 && "er" `isSuffixOf` token && all isAlpha token)
+
+ambiguousVerbHeadPenalty ∷ String → Int
+ambiguousVerbHeadPenalty verb
+  | lower `elem` ["better", "worse", "faster", "slower", "harder", "sooner", "later", "far"] = 4
+  | otherwise = 0
+  where
+    lower = map toLower verb
 
 functionWordPenalty ∷ String → Int
 functionWordPenalty word
