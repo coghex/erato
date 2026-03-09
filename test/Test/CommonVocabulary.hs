@@ -41,3 +41,27 @@ spec grammars = describe "Common vocabulary" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") [] "woman" Singular Nothing)
         (Transitive "see" (CommonNoun (Just "the") [] "dog" Singular Nothing))
+
+  it "parses sentence-initial capitalization: Dog runs" $ do
+    parsePreferredControlledSentence grammars "Dog runs"
+      `shouldBe`
+        Just
+          (Sentence Present Positive
+            (CommonNoun Nothing [] "dog" Singular Nothing)
+            (Intransitive "run"))
+
+  it "parses sentence-initial capitalization for determiners: The dog runs" $ do
+    parsePreferredControlledSentence grammars "The dog runs"
+      `shouldBe`
+        Just
+          (Sentence Present Positive
+            (CommonNoun (Just "the") [] "dog" Singular Nothing)
+            (Intransitive "run"))
+
+  it "parses lowercase first word: dog runs" $ do
+    let exprs = parseControlled grammars "dog runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun Nothing [] "dog" Singular Nothing)
+        (Intransitive "run")

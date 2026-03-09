@@ -33,3 +33,11 @@ spec grammars = describe "Proper nouns (unknown words)" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") [] "man" Singular Nothing)
         (Transitive "eat" (ProperNoun "iPhone"))
+
+  it "keeps unknown sentence-initial capitalization as proper noun: Zorg runs" $ do
+    parsePreferredControlledSentence grammars "Zorg runs"
+      `shouldBe`
+        Just
+          (Sentence Present Positive
+            (ProperNoun "Zorg")
+            (Intransitive "run"))

@@ -11,6 +11,7 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
+import Data.Char (isUpper, toLower)
 import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
@@ -39,8 +40,12 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      normalized     = normalizePossessives input
-      parses         = parse pgf lang typ (normalizedInput normalized)
+      rewrittenInput = normalizeSentenceInitialPronoun input
+      normalized     = normalizePossessives rewrittenInput
+      parseInput
+        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
+        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
+      parses         = parse pgf lang typ parseInput
       validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
       filteredParses = filterPossessiveParses normalized validParses
   in map snd filteredParses
@@ -51,8 +56,12 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      normalized     = normalizePossessives input
-      parses         = parse pgf lang typ (normalizedInput normalized)
+      rewrittenInput = normalizeSentenceInitialPronoun input
+      normalized     = normalizePossessives rewrittenInput
+      parseInput
+        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
+        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
+      parses         = parse pgf lang typ parseInput
       validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
       filteredParses = filterPossessiveParses normalized validParses
   in map fst filteredParses
@@ -65,9 +74,14 @@ parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
   let pgf            = fallbackPgf bundle
       lang           = mkCId "AllEng"
+      morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      normalized     = normalizePossessives input
-      parses         = parse pgf lang typ (normalizedInput normalized)
+      rewrittenInput = normalizeSentenceInitialPronoun input
+      normalized     = normalizePossessives rewrittenInput
+      parseInput
+        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
+        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
+      parses         = parse pgf lang typ parseInput
       parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
       filteredParses = filterPossessiveParses normalized parsedSentences
   in map snd filteredParses
@@ -76,9 +90,14 @@ parseFallbackSentences ∷ GrammarBundle → String → [Sentence]
 parseFallbackSentences bundle input =
   let pgf            = fallbackPgf bundle
       lang           = mkCId "AllEng"
+      morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      normalized     = normalizePossessives input
-      parses         = parse pgf lang typ (normalizedInput normalized)
+      rewrittenInput = normalizeSentenceInitialPronoun input
+      normalized     = normalizePossessives rewrittenInput
+      parseInput
+        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
+        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
+      parses         = parse pgf lang typ parseInput
       parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
       filteredParses = filterPossessiveParses normalized parsedSentences
   in map fst filteredParses
@@ -100,6 +119,60 @@ normalizePossessives input =
        { normalizedInput = unwords normalizedTokens
        , possessiveMarkerCount = length (filter isPossessiveToken tokens)
        }
+
+normalizeSentenceInitialPronoun ∷ String → String
+normalizeSentenceInitialPronoun input =
+  case words input of
+    [] -> input
+    firstToken : rest ->
+      case rewriteInitialPronounToken firstToken of
+        Nothing -> input
+        Just rewritten -> unwords (rewritten ++ rest)
+
+rewriteInitialPronounToken ∷ String → Maybe [String]
+rewriteInitialPronounToken "i" = Just ["I"]
+rewriteInitialPronounToken "i'm" = Just ["I", "am"]
+rewriteInitialPronounToken "I'm" = Just ["I", "am"]
+rewriteInitialPronounToken "i’m" = Just ["I", "am"]
+rewriteInitialPronounToken "I’m" = Just ["I", "am"]
+rewriteInitialPronounToken "i've" = Just ["I", "have"]
+rewriteInitialPronounToken "I've" = Just ["I", "have"]
+rewriteInitialPronounToken "i’ve" = Just ["I", "have"]
+rewriteInitialPronounToken "I’ve" = Just ["I", "have"]
+rewriteInitialPronounToken "i'll" = Just ["I", "will"]
+rewriteInitialPronounToken "I'll" = Just ["I", "will"]
+rewriteInitialPronounToken "i’ll" = Just ["I", "will"]
+rewriteInitialPronounToken "I’ll" = Just ["I", "will"]
+rewriteInitialPronounToken _ = Nothing
+
+normalizeSentenceInitialTokenCase ∷ Morpho → String → String
+normalizeSentenceInitialTokenCase morpho input =
+  case words input of
+    [] -> input
+    firstToken : rest ->
+      let normalizedFirst = case normalizeSentenceInitialWord morpho firstToken of
+            Just word -> word
+            Nothing   -> firstToken
+      in unwords (normalizedFirst : rest)
+
+normalizeSentenceInitialWord ∷ Morpho → String → Maybe String
+normalizeSentenceInitialWord morpho token
+  | token `elem` sentenceInitialCaseExceptions = Nothing
+  | otherwise = do
+      lowered <- lowercaseInitial token
+      if null (lookupMorpho morpho lowered)
+        then Nothing
+        else Just lowered
+
+lowercaseInitial ∷ String → Maybe String
+lowercaseInitial [] = Nothing
+lowercaseInitial (c:cs)
+  | isUpper c = Just (toLower c : cs)
+  | otherwise = Nothing
+
+sentenceInitialCaseExceptions ∷ [String]
+sentenceInitialCaseExceptions =
+  [ "I", "I'm", "I’m", "I'll", "I’ll", "I'd", "I’d", "I've", "I’ve" ]
 
 normalizePossessiveToken ∷ String → String
 normalizePossessiveToken token

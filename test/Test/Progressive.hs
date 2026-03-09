@@ -57,3 +57,11 @@ spec grammars = describe "Progressive aspect" $ do
       Sentence Present Positive
         (Pronoun First Singular Subjective)
         (Progressive (Intransitive "run"))
+
+  it "parses sentence-initial contraction: i'm running" $ do
+    let exprs = parseControlled grammars "i'm running"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun First Singular Subjective)
+        (Progressive (Intransitive "run"))

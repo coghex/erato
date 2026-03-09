@@ -18,6 +18,14 @@ spec grammars = describe "Pronouns" $ do
         (Pronoun First Singular Subjective)
         (Intransitive "run")
 
+  it "parses lowercase first pronoun subject: i run" $ do
+    let exprs = parseControlled grammars "i run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun First Singular Subjective)
+        (Intransitive "run")
+
   it "parses pronoun subject: we run" $ do
     let exprs = parseControlled grammars "we run"
     shouldParse exprs
