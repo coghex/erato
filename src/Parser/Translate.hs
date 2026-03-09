@@ -217,6 +217,9 @@ parseQuestionIP _ = Nothing
 
 parseQuestionIAdv ∷ SExp → Maybe QuestionWord
 parseQuestionIAdv (Atom "where_IAdv") = Just Where
+parseQuestionIAdv (Atom "when_IAdv")  = Just When
+parseQuestionIAdv (Atom "why_IAdv")   = Just Why
+parseQuestionIAdv (Atom "how_IAdv")   = Just How
 parseQuestionIAdv _ = Nothing
 
 parseDetInfo ∷ SExp → Maybe (String, Maybe Number)
@@ -528,6 +531,9 @@ renderQuestionWord ∷ QuestionWord → String
 renderQuestionWord Who = fantasyToken "who"
 renderQuestionWord What = fantasyToken "what"
 renderQuestionWord Where = fantasyToken "where"
+renderQuestionWord When = fantasyToken "when"
+renderQuestionWord Why = fantasyToken "why"
+renderQuestionWord How = fantasyToken "how"
 
 renderConj ∷ Conj → String
 renderConj And = fantasyToken "and"

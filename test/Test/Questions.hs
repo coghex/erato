@@ -105,12 +105,48 @@ spec grammars = describe "Questions" $ do
           (CommonNoun (Just "the") [] "man" Singular Nothing)
           "eat")
 
+  it "parses object wh-question with whom: whom does the man see" $ do
+    let exprs = parseControlled grammars "whom does the man see"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectWh Who
+          (CommonNoun (Just "the") [] "man" Singular Nothing)
+          "see")
+
   it "parses adverb wh-question: where does the dog run" $ do
     let exprs = parseControlled grammars "where does the dog run"
     shouldParse exprs
     exprs `shouldParseAs`
       WhQuestion Present Positive
         (AdvWh Where
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (Intransitive "run"))
+
+  it "parses adverb wh-question: when does the dog run" $ do
+    let exprs = parseControlled grammars "when does the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh When
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (Intransitive "run"))
+
+  it "parses adverb wh-question: why does the dog run" $ do
+    let exprs = parseControlled grammars "why does the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh Why
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (Intransitive "run"))
+
+  it "parses adverb wh-question: how does the dog run" $ do
+    let exprs = parseControlled grammars "how does the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh How
           (CommonNoun (Just "the") [] "dog" Singular Nothing)
           (Intransitive "run"))
 
