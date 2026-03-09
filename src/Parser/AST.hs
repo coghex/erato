@@ -31,7 +31,7 @@ data Number = Singular | Plural
 data PronounCase = Subjective | Objective
   deriving (Eq, Show)
 
-data QuestionWord = Who | What | Where | When | Why | How | Which | HowMany
+data QuestionWord = Who | What | Where | When | Why | How | Which | HowMany | HowMuch
   deriving (Eq, Show)
 
 data Conj = And | Or

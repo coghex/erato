@@ -149,6 +149,8 @@ collapseDegreeModifierTokens ∷ [String] → [String]
 collapseDegreeModifierTokens [] = []
 collapseDegreeModifierTokens [token] = [token]
 collapseDegreeModifierTokens (first : second : third : rest)
+  | isHowMuchPrefix first second =
+      first : second : collapseDegreeModifierTokens (third : rest)
   | isALotDegreeModifier first second && isDegreeHead third =
       third : collapseDegreeModifierTokens rest
   | isABitDegreeModifier first second && isDegreeHead third =
@@ -170,6 +172,10 @@ isALotDegreeModifier first second =
 isABitDegreeModifier ∷ String → String → Bool
 isABitDegreeModifier first second =
   map toLower first == "a" && map toLower second == "bit"
+
+isHowMuchPrefix ∷ String → String → Bool
+isHowMuchPrefix first second =
+  map toLower first == "how" && map toLower second == "much"
 
 isDegreeHead ∷ String → Bool
 isDegreeHead token =

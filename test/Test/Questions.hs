@@ -165,6 +165,27 @@ spec grammars = describe "Questions" $ do
     let exprs = parseControlled grammars "how many dog runs"
     shouldReject exprs
 
+  it "parses degree-modified comparative which-question: which dog is much bigger than the cat" $ do
+    let exprs = parseControlled grammars "which dog is much bigger than the cat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectDetWh Which
+          (CommonNoun (Just "which") [] "dog" Singular Nothing)
+          (VPWithAdv
+            (Copula "bigger")
+            (PrepPhrase "than" (CommonNoun (Just "the") [] "cat" Singular Nothing))))
+
+  it "parses comparative quantifier object wh-question: how much less food does the dog eat" $ do
+    let exprs = parseControlled grammars "how much less food does the dog eat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (ObjectDetWh HowMuch
+          (CommonNoun (Just "how much") ["less"] "food" Singular Nothing)
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          "eat")
+
   it "parses adverb wh-question: where does the dog run" $ do
     let exprs = parseControlled grammars "where does the dog run"
     shouldParse exprs

@@ -241,12 +241,14 @@ parseQuestionIDet ∷ SExp → Maybe QuestionWord
 parseQuestionIDet (Atom "whichSg_IDet") = Just Which
 parseQuestionIDet (Atom "whichPl_IDet") = Just Which
 parseQuestionIDet (Atom "howMany_IDet") = Just HowMany
+parseQuestionIDet (Atom "howMuch_IDet") = Just HowMuch
 parseQuestionIDet _ = Nothing
 
 parseQuestionDetInfo ∷ SExp → Maybe (String, Maybe Number)
 parseQuestionDetInfo (Atom "whichSg_IDet") = Just ("which", Just Singular)
 parseQuestionDetInfo (Atom "whichPl_IDet") = Just ("which", Just Plural)
 parseQuestionDetInfo (Atom "howMany_IDet") = Just ("how many", Just Plural)
+parseQuestionDetInfo (Atom "howMuch_IDet") = Just ("how much", Nothing)
 parseQuestionDetInfo _ = Nothing
 
 parseQuestionDetNP ∷ SExp → SExp → Maybe NounPhrase
@@ -581,6 +583,7 @@ renderQuestionWord Why = fantasyToken "why"
 renderQuestionWord How = fantasyToken "how"
 renderQuestionWord Which = fantasyToken "which"
 renderQuestionWord HowMany = unwords [fantasyToken "how", fantasyToken "many"]
+renderQuestionWord HowMuch = unwords [fantasyToken "how", fantasyToken "much"]
 
 renderConj ∷ Conj → String
 renderConj And = fantasyToken "and"
