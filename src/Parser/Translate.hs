@@ -79,6 +79,19 @@ parseQuestion (List [Atom "MkQS", t, p, qcl]) = do
     case parsed of
       ParsedPolarQuestion subj vp -> Question tense' polarity' subj vp
       ParsedWhQuestion whClause   -> WhQuestion tense' polarity' whClause
+parseQuestion (List [Atom "MkQSIAdvCoord", t, p, iadv, np, conj, vp1, vp2]) = do
+  tense' <- parseTense t
+  polarity' <- parsePolarity p
+  (qword, frontedAdvs) <- parseQuestionIAdv iadv
+  subj <- parseNP Subjective np
+  c <- parseConj conj
+  (vpa, vf1) <- parseVP vp1
+  (vpb, vf2) <- parseVP vp2
+  let baseVp = CoordVP c vpa vpb
+      vp = foldl VPWithAdv baseVp frontedAdvs
+  if questionAgreementOk vpa vf1 && questionAgreementOk vpb vf2
+    then pure (WhQuestion tense' polarity' (AdvWh qword subj vp))
+    else Nothing
 parseQuestion _ = Nothing
 
 parseQCl ∷ SExp → Maybe ParsedQuestion

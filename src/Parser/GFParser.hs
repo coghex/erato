@@ -40,7 +40,7 @@ parseControlled bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -56,7 +56,7 @@ parseControlledSentences bundle input =
       lang           = controlledLang bundle
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -76,7 +76,7 @@ parseFallbackAllEng bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -92,7 +92,7 @@ parseFallbackSentences bundle input =
       lang           = mkCId "AllEng"
       morpho         = controlledMorpho bundle
       typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeContractions (tokenizeInput input)))
+      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input))))
       normalized     = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
@@ -140,6 +140,37 @@ tokenHasPluralPossessiveQuote token =
 normalizeContractions ∷ String → String
 normalizeContractions input =
   unwords (concatMap normalizeContractionToken (words input))
+
+normalizeQuestionNegationOrder ∷ String → String
+normalizeQuestionNegationOrder input =
+  unwords (rewriteQuestionNegationTokens (words input))
+
+rewriteQuestionNegationTokens ∷ [String] → [String]
+rewriteQuestionNegationTokens (wh : aux : "not" : det : noun : rest)
+  | isWhToken wh && isInversionAux aux && isDetToken det =
+      [wh, aux, det, noun, "not"] ++ rest
+rewriteQuestionNegationTokens (wh : aux : "not" : subj : rest)
+  | isWhToken wh && isInversionAux aux =
+      [wh, aux, subj, "not"] ++ rest
+rewriteQuestionNegationTokens tokens = tokens
+
+isWhToken ∷ String → Bool
+isWhToken token =
+  map toLower token `elem` ["why", "where", "when", "how", "what", "who", "which"]
+
+isInversionAux ∷ String → Bool
+isInversionAux token =
+  map toLower token `elem`
+    [ "do", "does", "did", "is", "are", "was", "were", "has", "have", "had"
+    , "will", "would", "can", "could", "shall", "should", "may", "might", "must"
+    ]
+
+isDetToken ∷ String → Bool
+isDetToken token =
+  map toLower token `elem`
+    [ "the", "a", "an", "this", "that", "these", "those"
+    , "my", "your", "his", "her", "its", "our", "their"
+    ]
 
 normalizeDegreeModifiers ∷ String → String
 normalizeDegreeModifiers input =
@@ -199,6 +230,7 @@ contractionExpansion token =
   in case lower of
        "can't"   -> Just ["can", "not"]
        "cannot"  -> Just ["can", "not"]
+       "doesn't" -> Just ["does", "not"]
        "won't"   -> Just ["will", "not"]
        "shan't"  -> Just ["shall", "not"]
        "i'm"     -> Just ["I", "am"]

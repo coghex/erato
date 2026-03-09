@@ -259,6 +259,19 @@ spec grammars = describe "Questions" $ do
             (Intransitive "run")
             (LexicalAdv "faster")))
 
+  it "parses comparative adverb wh-question with coordinated verbs" $ do
+    let exprs = parseControlled grammars "how much faster does the dog run and eat"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (AdvWh How
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (VPWithAdv
+            (CoordVP And
+              (Intransitive "run")
+              (Intransitive "eat"))
+            (ModifiedAdv "much" (LexicalAdv "faster"))))
+
   it "prefers comparative adverb how-much parse over object reading" $ do
     parsePreferredControlledSentence grammars "how much faster does the dog run"
       `shouldBe`
@@ -269,6 +282,17 @@ spec grammars = describe "Questions" $ do
               (VPWithAdv
                 (Intransitive "run")
                 (ModifiedAdv "much" (LexicalAdv "faster")))))
+
+  it "parses negative adverb wh-question contraction: why doesn't the dog run better" $ do
+    let exprs = parseControlled grammars "why doesn't the dog run better"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Negative
+        (AdvWh Why
+          (CommonNoun (Just "the") [] "dog" Singular Nothing)
+          (VPWithAdv
+            (Intransitive "run")
+            (LexicalAdv "better")))
 
   it "rejects inflected object wh-question verb: what does the man eats" $ do
     let exprs = parseControlled grammars "what does the man eats"
