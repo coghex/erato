@@ -47,6 +47,7 @@ The runner reports:
 - total sentence count,
 - controlled parse rate,
 - fallback parse rate,
+- auto-pass count/rate for single-word entries (e.g., headings),
 - unparsed rate,
 - first N unparsed examples with file/line context.
 

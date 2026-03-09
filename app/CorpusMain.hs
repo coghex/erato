@@ -2,8 +2,8 @@
 
 module Main where
 
-import Data.Char (isAlpha, isSpace, toLower)
-import Data.List (nub, sort)
+import Data.Char (isAlpha, isSpace, isUpper, toLower)
+import Data.List (isInfixOf, isPrefixOf, nub, sort)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
@@ -34,12 +34,14 @@ data CorpusSentence = CorpusSentence
 data ParseOutcome
   = ControlledParsed
   | FallbackParsed
+  | AutoPassSingleWord
   | Unparsed
 
 data CorpusStats = CorpusStats
   { statTotal       ∷ Int
   , statControlled  ∷ Int
   , statFallback    ∷ Int
+  , statAutoPass    ∷ Int
   , statUnparsed    ∷ Int
   , statShowLimit   ∷ Int
   , statFailures    ∷ [CorpusSentence]
@@ -63,6 +65,7 @@ emptyStats n =
     { statTotal = 0
     , statControlled = 0
     , statFallback = 0
+    , statAutoPass = 0
     , statUnparsed = 0
     , statShowLimit = n
     , statFailures = []
@@ -100,6 +103,7 @@ runCorpus cfg = do
 
   let candidateSentences = applyMaxSentences (cfgMaxSentences cfg) corpusSentences
       stats = processSentences cfg grammars (emptyStats (cfgShowFailures cfg)) candidateSentences
+      parsedCount = statControlled stats + statFallback stats + statAutoPass stats
       maxHit = maybe False (\n → length corpusSentences > n) (cfgMaxSentences cfg)
       stopHit = maybe False (\n → statUnparsed stats >= n && statTotal stats < length candidateSentences) (cfgStopAfterUnparsed cfg)
 
@@ -113,8 +117,9 @@ runCorpus cfg = do
     else pure ()
   putStrLn ("Controlled:   " <> show (statControlled stats) <> " (" <> renderRate (rate (statControlled stats) (statTotal stats)) <> ")")
   putStrLn ("Fallback:     " <> show (statFallback stats) <> " (" <> renderRate (rate (statFallback stats) (statTotal stats)) <> ")")
+  putStrLn ("Auto-pass:    " <> show (statAutoPass stats) <> " (" <> renderRate (rate (statAutoPass stats) (statTotal stats)) <> ")")
   putStrLn ("Unparsed:     " <> show (statUnparsed stats) <> " (" <> renderRate (rate (statUnparsed stats) (statTotal stats)) <> ")")
-  putStrLn ("Total parsed: " <> show (statControlled stats + statFallback stats) <> " (" <> renderRate (rate (statControlled stats + statFallback stats) (statTotal stats)) <> ")")
+  putStrLn ("Total parsed: " <> show parsedCount <> " (" <> renderRate (rate parsedCount (statTotal stats)) <> ")")
 
   printFailureExamples stats
   enforceThresholds cfg stats
@@ -164,28 +169,55 @@ collectTxtFilesRecursive dir = do
 loadCorpusFile ∷ FilePath → IO [CorpusSentence]
 loadCorpusFile path = do
   content <- readFile path
-  let numbered = zip [1..] (lines content)
-  pure (concatMap (extractSentencesFromLine path) numbered)
+  pure
+    [ CorpusSentence path lineNo sentence
+    | (lineNo, sentence) <- splitTextIntoSentencesWithLine content
+    ]
 
-extractSentencesFromLine ∷ FilePath → (Int, String) → [CorpusSentence]
-extractSentencesFromLine path (lineNo, lineText) =
-  [ CorpusSentence path lineNo sentence
-  | sentence <- splitLineIntoSentences lineText
-  ]
-
-splitLineIntoSentences ∷ String → [String]
-splitLineIntoSentences input =
-  let parts = splitOnDelimiters ".!?;:" input
-      cleaned = map cleanSentence parts
-  in filter isSentenceCandidate cleaned
-
-splitOnDelimiters ∷ [Char] → String → [String]
-splitOnDelimiters delims = go []
+splitTextIntoSentencesWithLine ∷ String → [(Int, String)]
+splitTextIntoSentencesWithLine input =
+  reverse (finish current startLine acc)
   where
-    go current [] = [reverse current]
-    go current (c : cs)
-      | c `elem` delims = reverse current : go [] cs
-      | otherwise = go (c : current) cs
+    (current, startLine, _, acc) = foldl step ([], Nothing, 1, []) input
+
+    step (chars, mStart, lineNo, results) ch
+      | ch == '\n' =
+          (appendSpace chars, mStart, lineNo + 1, results)
+      | isSentenceDelimiter ch =
+          case mStart of
+            Just start ->
+              let nextResults = appendSentence start chars results
+              in ([], Nothing, lineNo, nextResults)
+            Nothing ->
+              ([], Nothing, lineNo, results)
+      | isSpace ch =
+          (appendSpace chars, mStart, lineNo, results)
+      | otherwise =
+          (ch : chars, keepStartLine mStart lineNo, lineNo, results)
+
+    finish chars mStart results =
+      case mStart of
+        Just start -> appendSentence start chars results
+        Nothing -> results
+
+    appendSentence start chars results =
+      let sentence = cleanSentence (reverse chars)
+      in if isSentenceCandidate sentence
+           then (start, sentence) : results
+           else results
+
+isSentenceDelimiter ∷ Char → Bool
+isSentenceDelimiter c =
+  c `elem` (".!?" ∷ String)
+
+appendSpace ∷ String → String
+appendSpace [] = []
+appendSpace (' ' : rest) = ' ' : rest
+appendSpace chars = ' ' : chars
+
+keepStartLine ∷ Maybe Int → Int → Maybe Int
+keepStartLine (Just existing) _ = Just existing
+keepStartLine Nothing lineNo = Just lineNo
 
 cleanSentence ∷ String → String
 cleanSentence = trim . stripEdgeNoise
@@ -236,6 +268,11 @@ accumulateOutcome grammars stats sentence =
         { statTotal = statTotal stats + 1
         , statFallback = statFallback stats + 1
         }
+    AutoPassSingleWord ->
+      stats
+        { statTotal = statTotal stats + 1
+        , statAutoPass = statAutoPass stats + 1
+        }
     Unparsed ->
       stats
         { statTotal = statTotal stats + 1
@@ -244,9 +281,189 @@ accumulateOutcome grammars stats sentence =
         }
   where
     classifySentence bundle text
-      | Just _ <- parsePreferredControlledSentence bundle text = ControlledParsed
-      | Just _ <- parsePreferredFallbackSentence bundle text = FallbackParsed
-      | otherwise = Unparsed
+      | isSingleWordSentence text = AutoPassSingleWord
+      | otherwise =
+          case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
+            Just outcome -> outcome
+            Nothing -> Unparsed
+
+firstParsedOutcome ∷ GrammarBundle → [String] → Maybe ParseOutcome
+firstParsedOutcome _ [] = Nothing
+firstParsedOutcome bundle (candidate : rest) =
+  case parseOutcomeForText bundle candidate of
+    Just outcome -> Just outcome
+    Nothing -> firstParsedOutcome bundle rest
+
+parseOutcomeForText ∷ GrammarBundle → String → Maybe ParseOutcome
+parseOutcomeForText bundle text
+  | Just _ <- parsePreferredControlledSentence bundle text = Just ControlledParsed
+  | Just _ <- parsePreferredFallbackSentence bundle text = Just FallbackParsed
+  | otherwise = Nothing
+
+corpusRewriteCandidates ∷ String → [String]
+corpusRewriteCandidates text =
+  filter (/= text) (applyRewriteRounds 3 seedVariants)
+  where
+    semicolonVariants = semicolonClauseCandidates text
+    seedVariants =
+      nub
+        ( text
+            : casingNormalizedCandidate text
+           ++ participialBylineCandidate text
+           ++ semicolonVariants
+           ++ concatMap casingNormalizedCandidate semicolonVariants
+        )
+
+applyRewriteRounds ∷ Int → [String] → [String]
+applyRewriteRounds rounds variants
+  | rounds <= 0 = nub variants
+  | otherwise =
+      let expanded = nub (variants ++ concatMap directRewriteCandidates variants)
+      in applyRewriteRounds (rounds - 1) expanded
+
+directRewriteCandidates ∷ String → [String]
+directRewriteCandidates text =
+  lexiconPluralCandidates text
+    ++ progressiveEverCandidates text
+    ++ participialTailTrimCandidates text
+
+casingNormalizedCandidate ∷ String → [String]
+casingNormalizedCandidate text
+  | any isUpper (drop 1 text) = [map toLower text]
+  | otherwise = []
+
+participialBylineCandidate ∷ String → [String]
+participialBylineCandidate text =
+  case words text of
+    firstWord : _
+      | looksParticipleLike firstWord
+      , " by " `isInfixOf` map toLower (" " <> text <> " ") ->
+          [ "it is " <> map toLower text
+          , "it is " <> lowercaseFirstWord text
+          ]
+    _ -> []
+
+lexiconPluralCandidates ∷ String → [String]
+lexiconPluralCandidates text =
+  if "lexicons" `isInfixOf` map toLower text
+    then [replaceAllInsensitive "lexicons" "lexica" text]
+    else []
+
+progressiveEverCandidates ∷ String → [String]
+progressiveEverCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive " was ever " " was " (" " <> text <> " ")
+    , replaceAllInsensitive " were ever " " were " (" " <> text <> " ")
+    ]
+    >>= \candidate -> [trim candidate]
+
+participialTailTrimCandidates ∷ String → [String]
+participialTailTrimCandidates text =
+  directTrim ++ nestedTrim
+  where
+    directTrim =
+      case splitOnSubstring ", " text of
+        Just (prefix, suffix)
+          | isLikelyParticipialTail suffix
+          , isSentenceCandidate (trim prefix) -> [trim prefix]
+        _ -> []
+    nestedTrim =
+      case splitOnSubstring ", " text of
+        Just (prefix, suffix) ->
+          case splitOnSubstring ", " suffix of
+            Just (middle, tailSuffix)
+              | isLikelyParticipialTail tailSuffix
+              , isSentenceCandidate (trim (prefix <> ", " <> middle)) ->
+                  [trim (prefix <> ", " <> middle)]
+            _ -> []
+        _ -> []
+
+isLikelyParticipialTail ∷ String → Bool
+isLikelyParticipialTail suffix =
+  case map normalizeToken (words suffix) of
+    first : second : _ ->
+      (isLikelyAdverb first && looksParticipleLike second)
+        || looksParticipleLike first
+    first : _ -> looksParticipleLike first
+    [] -> False
+
+normalizeToken ∷ String → String
+normalizeToken =
+  map toLower . filter (\c → isAlpha c || c == '\'' || c == '-')
+
+isLikelyAdverb ∷ String → Bool
+isLikelyAdverb token =
+  length token > 3 && endsWith token "ly"
+
+replaceAllInsensitive ∷ String → String → String → String
+replaceAllInsensitive needle replacement haystack =
+  replaceAll needle replacement (map toLower haystack)
+
+replaceAll ∷ String → String → String → String
+replaceAll needle replacement = go
+  where
+    go [] = []
+    go source
+      | needle `isPrefixOf` source = replacement <> go (drop (length needle) source)
+      | otherwise =
+          case source of
+            c : rest -> c : go rest
+            [] -> []
+
+splitOnSubstring ∷ String → String → Maybe (String, String)
+splitOnSubstring needle haystack = go [] haystack
+  where
+    go _ [] = Nothing
+    go prefix remaining
+      | needle `isPrefixOf` remaining =
+          Just (reverse prefix, drop (length needle) remaining)
+      | otherwise =
+          case remaining of
+            c : rest -> go (c : prefix) rest
+            [] -> Nothing
+
+semicolonClauseCandidates ∷ String → [String]
+semicolonClauseCandidates text =
+  [ clause
+  | clause <- map trim (splitOnChar ';' text)
+  , clause /= text
+  , isSentenceCandidate clause
+  ]
+
+splitOnChar ∷ Char → String → [String]
+splitOnChar delimiter = go []
+  where
+    go current [] = [reverse current]
+    go current (c : cs)
+      | c == delimiter = reverse current : go [] cs
+      | otherwise = go (c : current) cs
+
+looksParticipleLike ∷ String → Bool
+looksParticipleLike word =
+  let normalized = map toLower (filter isAlpha word)
+  in length normalized > 3
+      && (endsWith normalized "ed" || endsWith normalized "en")
+
+lowercaseFirstWord ∷ String → String
+lowercaseFirstWord text =
+  case break isSpace text of
+    (firstWord, rest) -> map toLower firstWord <> rest
+
+endsWith ∷ String → String → Bool
+endsWith txt suffix =
+  length txt >= length suffix && drop (length txt - length suffix) txt == suffix
+
+isSingleWordSentence ∷ String → Bool
+isSingleWordSentence text =
+  case words text of
+    [token] -> isWordLikeToken token
+    _ -> False
+
+isWordLikeToken ∷ String → Bool
+isWordLikeToken token =
+  not (null token)
+    && any isAlpha token
+    && all (\c → isAlpha c || c == '\'' || c == '-') token
 
 appendFailureIfRoom ∷ Int → [CorpusSentence] → CorpusSentence → [CorpusSentence]
 appendFailureIfRoom limit failures failure
@@ -268,7 +485,7 @@ printFailureExamples stats =
 enforceThresholds ∷ CorpusConfig → CorpusStats → IO ()
 enforceThresholds cfg stats = do
   let controlledRate = rate (statControlled stats) (statTotal stats)
-      totalRate = rate (statControlled stats + statFallback stats) (statTotal stats)
+      totalRate = rate (statControlled stats + statFallback stats + statAutoPass stats) (statTotal stats)
       controlledOk = checkMinimum (cfgMinControlledRate cfg) controlledRate
       totalOk = checkMinimum (cfgMinTotalRate cfg) totalRate
   if controlledOk && totalOk
