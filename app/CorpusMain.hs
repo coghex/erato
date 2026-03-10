@@ -285,7 +285,7 @@ normalizeCorpusNoise =
   unwords
     . filter (not . null)
     . filter (not . isAsteriskWord)
-    . filter (not . startsWithUnderscoreWord)
+    . filter (not . isUnderscoreMarkupWord)
     . words
     . map normalizeNoiseChar
 
@@ -297,11 +297,10 @@ normalizeNoiseChar c
 isDashChar ∷ Char → Bool
 isDashChar c = c `elem` ("-–—―" ∷ String)
 
-startsWithUnderscoreWord ∷ String → Bool
-startsWithUnderscoreWord token =
-  case stripTokenEdgeNoise token of
-    '_' : _ -> True
-    _ -> False
+isUnderscoreMarkupWord ∷ String → Bool
+isUnderscoreMarkupWord token =
+  let core = stripTokenEdgeNoise token
+  in not (null core) && '_' `elem` core
 
 isAsteriskWord ∷ String → Bool
 isAsteriskWord token =
