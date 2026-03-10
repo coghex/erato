@@ -2,7 +2,7 @@
 
 module Main where
 
-import Data.Char (isAlpha, isSpace, isUpper, toLower)
+import Data.Char (isAlpha, isLower, isSpace, isUpper, toLower)
 import Data.List (isInfixOf, isPrefixOf, nub, sort)
 import Data.Maybe (mapMaybe)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
@@ -179,7 +179,8 @@ splitTextIntoSentencesWithLine ∷ String → [(Int, String)]
 splitTextIntoSentencesWithLine input =
   reverse (finish current startLine acc)
   where
-    (current, startLine, _, acc) = foldl step ([], Nothing, 1, []) input
+    protectedInput = protectAbbreviationPeriods input
+    (current, startLine, _, acc) = foldl step ([], Nothing, 1, []) protectedInput
 
     step (chars, mStart, lineNo, results) ch
       | ch == '\n' =
@@ -202,7 +203,7 @@ splitTextIntoSentencesWithLine input =
         Nothing -> results
 
     appendSentence start chars results =
-      let sentence = cleanSentence (reverse chars)
+      let sentence = cleanSentence (restoreProtectedPeriods (reverse chars))
       in if isSentenceCandidate sentence
            then (start, sentence) : results
            else results
@@ -210,6 +211,61 @@ splitTextIntoSentencesWithLine input =
 isSentenceDelimiter ∷ Char → Bool
 isSentenceDelimiter c =
   c `elem` (".!?" ∷ String)
+
+abbreviationPeriodMarker ∷ Char
+abbreviationPeriodMarker = '\x1E'
+
+protectAbbreviationPeriods ∷ String → String
+protectAbbreviationPeriods = go []
+  where
+    go _ [] = []
+    go prefix ('.' : rest)
+      | shouldProtectAbbreviationPeriod prefix rest =
+          abbreviationPeriodMarker : go (abbreviationPeriodMarker : prefix) rest
+      | otherwise =
+          '.' : go ('.' : prefix) rest
+    go prefix (ch : rest) =
+      ch : go (ch : prefix) rest
+
+restoreProtectedPeriods ∷ String → String
+restoreProtectedPeriods =
+  map (\c → if c == abbreviationPeriodMarker then '.' else c)
+
+shouldProtectAbbreviationPeriod ∷ String → String → Bool
+shouldProtectAbbreviationPeriod prefix rest =
+  case abbreviationTokenBeforePeriod prefix of
+    Just token ->
+      isLikelyAbbreviationToken token && nextWordStartsLowercase rest
+    Nothing -> False
+
+abbreviationTokenBeforePeriod ∷ String → Maybe String
+abbreviationTokenBeforePeriod prefix =
+  let tokenRev = takeWhile isAlpha prefix
+  in if null tokenRev
+       then Nothing
+       else Just (reverse tokenRev)
+
+isLikelyAbbreviationToken ∷ String → Bool
+isLikelyAbbreviationToken token =
+  length token <= 3
+    && all isAlpha token
+    && any isUpper token
+
+nextWordStartsLowercase ∷ String → Bool
+nextWordStartsLowercase rest =
+  case firstSignificantCharAfterPeriod rest of
+    Just c -> isLower c
+    Nothing -> False
+
+firstSignificantCharAfterPeriod ∷ String → Maybe Char
+firstSignificantCharAfterPeriod [] = Nothing
+firstSignificantCharAfterPeriod (c : cs)
+  | isPeriodFollowerNoise c = firstSignificantCharAfterPeriod cs
+  | otherwise = Just c
+
+isPeriodFollowerNoise ∷ Char → Bool
+isPeriodFollowerNoise c =
+  isSpace c || c `elem` ("\"'()[]{}" ∷ String)
 
 appendSpace ∷ String → String
 appendSpace [] = []
@@ -227,6 +283,7 @@ normalizeCorpusNoise ∷ String → String
 normalizeCorpusNoise =
   unwords
     . filter (not . null)
+    . filter (not . isAsteriskWord)
     . filter (not . startsWithUnderscoreWord)
     . words
     . map normalizeNoiseChar
@@ -234,7 +291,6 @@ normalizeCorpusNoise =
 normalizeNoiseChar ∷ Char → Char
 normalizeNoiseChar c
   | isDashChar c = ' '
-  | c == '*' = ' '
   | otherwise = c
 
 isDashChar ∷ Char → Bool
@@ -242,9 +298,23 @@ isDashChar c = c `elem` ("-–—―" ∷ String)
 
 startsWithUnderscoreWord ∷ String → Bool
 startsWithUnderscoreWord token =
-  case dropWhile isTokenPrefixNoise token of
+  case stripTokenEdgeNoise token of
     '_' : _ -> True
     _ -> False
+
+isAsteriskWord ∷ String → Bool
+isAsteriskWord token =
+  case stripTokenEdgeNoise token of
+    [] -> False
+    core -> all (== '*') core
+
+stripTokenEdgeNoise ∷ String → String
+stripTokenEdgeNoise =
+  reverse . dropWhile isTokenEdgeNoise . reverse . dropWhile isTokenEdgeNoise
+
+isTokenEdgeNoise ∷ Char → Bool
+isTokenEdgeNoise c =
+  isTokenPrefixNoise c || c `elem` (",.;:!?" ∷ String)
 
 isTokenPrefixNoise ∷ Char → Bool
 isTokenPrefixNoise c = c `elem` ("\"'([{`" ∷ String)
