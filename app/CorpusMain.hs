@@ -4,6 +4,7 @@ module Main where
 
 import Data.Char (isAlpha, isSpace, isUpper, toLower)
 import Data.List (isInfixOf, isPrefixOf, nub, sort)
+import Data.Maybe (mapMaybe)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
@@ -220,7 +221,32 @@ keepStartLine (Just existing) _ = Just existing
 keepStartLine Nothing lineNo = Just lineNo
 
 cleanSentence ∷ String → String
-cleanSentence = trim . stripEdgeNoise
+cleanSentence = trim . normalizeCorpusNoise . stripEdgeNoise
+
+normalizeCorpusNoise ∷ String → String
+normalizeCorpusNoise =
+  unwords
+    . filter (not . null)
+    . filter (not . startsWithUnderscoreWord)
+    . words
+    . map normalizeNoiseChar
+
+normalizeNoiseChar ∷ Char → Char
+normalizeNoiseChar c
+  | isDashChar c = ' '
+  | otherwise = c
+
+isDashChar ∷ Char → Bool
+isDashChar c = c `elem` ("-–—―" ∷ String)
+
+startsWithUnderscoreWord ∷ String → Bool
+startsWithUnderscoreWord token =
+  case dropWhile isTokenPrefixNoise token of
+    '_' : _ -> True
+    _ -> False
+
+isTokenPrefixNoise ∷ Char → Bool
+isTokenPrefixNoise c = c `elem` ("\"'([{`" ∷ String)
 
 stripEdgeNoise ∷ String → String
 stripEdgeNoise =
@@ -325,7 +351,39 @@ directRewriteCandidates ∷ String → [String]
 directRewriteCandidates text =
   lexiconPluralCandidates text
     ++ progressiveEverCandidates text
+    ++ archaicVerbCandidates text
+    ++ passiveInfinitiveCandidates text
+    ++ complexClauseNormalizationCandidates text
+    ++ takeInHandCandidates text
+    ++ andToInfinitiveCandidates text
+    ++ byWhatNameCandidates text
+    ++ byNameClauseTrimCandidates text
+    ++ freeRelativeCandidates text
+    ++ frontedSubordinateCandidates text
+    ++ pruneLeavingParentheticalCandidates text
     ++ participialTailTrimCandidates text
+
+complexClauseNormalizationCandidates ∷ String → [String]
+complexClauseNormalizationCandidates text =
+  concatMap expand [map toLower text]
+  where
+    expand base =
+      let step1 = replaceAllInsensitive "take in hand to " "" base
+          step2 = replaceAllInsensitive ", and to " " and " step1
+          step3 = collapseByWhatNameCalled step2
+          step4 = replaceAllInsensitive "that which" "the thing that" step3
+          pruned = step4 : pruneLeavingParentheticalCandidates step4
+          fronted = concatMap frontedSubordinateCandidates pruned
+      in nub (pruned ++ fronted)
+
+collapseByWhatNameCalled ∷ String → String
+collapseByWhatNameCalled text =
+  case splitOnSubstring "by what name" text of
+    Just (prefix, rest) ->
+      case splitOnSubstring "in our tongue" rest of
+        Just (_, suffix) -> trim (prefix <> "by name " <> suffix)
+        Nothing -> text
+    Nothing -> text
 
 casingNormalizedCandidate ∷ String → [String]
 casingNormalizedCandidate text
@@ -356,6 +414,132 @@ progressiveEverCandidates text =
     , replaceAllInsensitive " were ever " " were " (" " <> text <> " ")
     ]
     >>= \candidate -> [trim candidate]
+
+archaicVerbCandidates ∷ String → [String]
+archaicVerbCandidates text =
+  [unwords (map normalizeArchaicToken (words text))]
+
+normalizeArchaicToken ∷ String → String
+normalizeArchaicToken token =
+  case map toLower token of
+    "doth" -> "does"
+    "hath" -> "has"
+    "maketh" -> "makes"
+    lower
+      | endsWith lower "eth"
+      , length lower > 4 -> take (length lower - 3) lower <> "s"
+    lower -> lower
+
+passiveInfinitiveCandidates ∷ String → [String]
+passiveInfinitiveCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive " is to be " " is " (" " <> text <> " ")
+    , replaceAllInsensitive " are to be " " are " (" " <> text <> " ")
+    , replaceAllInsensitive " was to be " " was " (" " <> text <> " ")
+    , replaceAllInsensitive " were to be " " were " (" " <> text <> " ")
+    ]
+    >>= \candidate -> [trim candidate]
+
+takeInHandCandidates ∷ String → [String]
+takeInHandCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive "take in hand to " "" text
+    ]
+
+byWhatNameCandidates ∷ String → [String]
+byWhatNameCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive "by what name" "by name" text
+    ]
+
+andToInfinitiveCandidates ∷ String → [String]
+andToInfinitiveCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive ", and to " " and " text
+    , replaceAllInsensitive " and to " " and " text
+    ]
+
+byNameClauseTrimCandidates ∷ String → [String]
+byNameClauseTrimCandidates text =
+  case splitOnSubstring " by name " (map toLower text) of
+    Just (prefix, rest) ->
+      case splitOnSubstring "," rest of
+        Just (_, suffixAfterComma) ->
+          let candidate = trim (prefix <> " by name," <> suffixAfterComma)
+          in [candidate | isSentenceCandidate candidate]
+        Nothing -> []
+    Nothing -> []
+
+freeRelativeCandidates ∷ String → [String]
+freeRelativeCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive "that which" "the thing that" text
+    ]
+
+frontedSubordinateCandidates ∷ String → [String]
+frontedSubordinateCandidates text =
+  case detectFrontedSubordinate text of
+    Just (subj, subordinate, mainClause)
+      | isSentenceCandidate subordinate
+      , isSentenceCandidate mainClause ->
+          [trim (mainClause <> " " <> subj <> " " <> subordinate)]
+    _ -> []
+
+detectFrontedSubordinate ∷ String → Maybe (String, String, String)
+detectFrontedSubordinate text =
+  case words (trim text) of
+    firstToken : _ ->
+      let subj = map toLower (filter isAlpha firstToken)
+      in if subj `elem` ["while", "when", "if", "because"]
+           then do
+             (subordinate, mainClause) <- splitAtMainClauseBoundary (drop (length firstToken) (trim text))
+             Just (subj, trim subordinate, trim mainClause)
+           else Nothing
+    _ -> Nothing
+
+splitAtMainClauseBoundary ∷ String → Maybe (String, String)
+splitAtMainClauseBoundary text =
+  case firstBoundaryIndex (map toLower text) of
+    Just idx ->
+      let subordinate = take idx text
+          mainClause = drop (idx + 2) text
+      in Just (subordinate, mainClause)
+    Nothing -> Nothing
+
+firstBoundaryIndex ∷ String → Maybe Int
+firstBoundaryIndex text =
+  findFirstMarker [", i ", ", you ", ", he ", ", she ", ", it ", ", we ", ", they "] text
+
+findFirstMarker ∷ [String] → String → Maybe Int
+findFirstMarker markers text =
+  minimumMaybe (mapMaybe (`indexOfSubstring` text) markers)
+
+minimumMaybe ∷ [Int] → Maybe Int
+minimumMaybe [] = Nothing
+minimumMaybe xs = Just (minimum xs)
+
+indexOfSubstring ∷ String → String → Maybe Int
+indexOfSubstring needle haystack = go 0 haystack
+  where
+    go _ [] = Nothing
+    go idx remaining
+      | needle `isPrefixOf` remaining = Just idx
+      | otherwise =
+          case remaining of
+            _ : rest -> go (idx + 1) rest
+            [] -> Nothing
+
+pruneLeavingParentheticalCandidates ∷ String → [String]
+pruneLeavingParentheticalCandidates text =
+  case splitOnSubstring ", leaving" (map toLower text) of
+    Just (prefix, restAfterLeaving) ->
+      case firstBoundaryIndex restAfterLeaving of
+        Just idx ->
+          let mainClause = drop (idx + 2) restAfterLeaving
+              candidate = trim (prefix <> ", " <> mainClause)
+          in [candidate | isSentenceCandidate candidate]
+        Nothing -> []
+    Nothing -> []
 
 participialTailTrimCandidates ∷ String → [String]
 participialTailTrimCandidates text =

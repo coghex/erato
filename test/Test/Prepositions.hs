@@ -71,3 +71,13 @@ spec grammars = describe "Prepositions / adverbs" $ do
             (Intransitive "run")
             (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing)))
           (PrepPhrase "with" (CommonNoun (Just "the") [] "woman" Singular Nothing)))
+
+  it "parses temporal adverb with transitive VP: I see him now" $ do
+    let exprs = parseControlled grammars "I see him now"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun First Singular Subjective)
+        (VPWithAdv
+          (Transitive "see" (Pronoun Third Singular Objective))
+          (LexicalAdv "now"))

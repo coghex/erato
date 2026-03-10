@@ -247,6 +247,7 @@ parseSubj ∷ SExp → Maybe String
 parseSubj (Atom "because_Subj") = Just "because"
 parseSubj (Atom "if_Subj")      = Just "if"
 parseSubj (Atom "when_Subj")    = Just "when"
+parseSubj (Atom "while_Subj")   = Just "while"
 parseSubj _                     = Nothing
 
 parseRP ∷ SExp → Maybe ()

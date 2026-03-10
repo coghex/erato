@@ -106,3 +106,24 @@ spec grammars = describe "Complements" $ do
           (Sentence Present Positive
             (CommonNoun (Just "the") [] "dog" Plural Nothing)
             (Intransitive "run")))
+
+  it "parses transitive infinitival complement with love: he loved to dust his old grammars" $ do
+    let exprs = parseControlled grammars "he loved to dust his old grammars"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (VVComplement "love"
+          (Transitive "dust"
+            (CommonNoun (Just "his") ["old"] "grammar" Plural Nothing)))
+
+  it "parses remind with of-PP: it reminded him of his mortality" $ do
+    let exprs = parseControlled grammars "it reminded him of his mortality"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (VPWithAdv
+          (Transitive "remind" (Pronoun Third Singular Objective))
+          (PrepPhrase "of"
+            (CommonNoun (Just "his") [] "mortality" Singular Nothing)))

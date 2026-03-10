@@ -48,3 +48,16 @@ spec grammars = describe "Subordinate clauses" $ do
             (Sentence Present Positive
               (CommonNoun (Just "the") [] "man" Singular Nothing)
               (Intransitive "run"))))
+
+  it "parses while-clause adjunct: the dog runs while the man runs" $ do
+    let exprs = parseControlled grammars "the dog runs while the man runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (VPWithAdv
+          (Intransitive "run")
+          (ClausePhrase "while"
+            (Sentence Present Positive
+              (CommonNoun (Just "the") [] "man" Singular Nothing)
+              (Intransitive "run"))))
