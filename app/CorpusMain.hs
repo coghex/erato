@@ -476,7 +476,20 @@ directRewriteCandidates text =
     ++ coordinatingLeadInCandidates text
     ++ beItParentheticalCandidates text
     ++ downFrontingCandidates text
+    ++ descriptiveCommaTailCandidates text
+    ++ demonstrativeSubjectCandidates text
+    ++ towardsPrepCandidates text
+    ++ amongWhichCoreCandidates text
+    ++ amongWhichTailCandidates text
+    ++ trailingThatAreCandidates text
+    ++ superlativeCoordToManyCandidates text
+    ++ amongLeadInCandidates text
+    ++ ofSizeCopulaCandidates text
     ++ forLeadInCandidates text
+    ++ postWhenClauseCandidates text
+    ++ temporalLeadInCandidates text
+    ++ alsoAdverbDropCandidates text
+    ++ ofWhichTailCandidates text
     ++ goneBeforeRelativeCandidates text
     ++ clearingOutCandidates text
     ++ andMakingTailTrimCandidates text
@@ -614,11 +627,189 @@ downFrontingCandidates text =
         _ -> []
     _ -> []
 
+descriptiveCommaTailCandidates ∷ String → [String]
+descriptiveCommaTailCandidates text =
+  case splitOnSubstring ", " text of
+    Just (prefix, suffix)
+      | looksDescriptiveTail suffix ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+    _ -> []
+
+looksDescriptiveTail ∷ String → Bool
+looksDescriptiveTail suffix =
+  case map normalizeToken (words suffix) of
+    first : second : _ ->
+      (all isAlpha first && looksParticipleLike second)
+        || looksParticipleLike first
+    first : _ -> looksParticipleLike first
+    [] -> False
+
+demonstrativeSubjectCandidates ∷ String → [String]
+demonstrativeSubjectCandidates text =
+  [ candidate
+  | marker <- ["this ", "that "]
+  , Just candidate <- [stripLeadingPhraseInsensitive marker text]
+  , let restored = "it " <> candidate
+  , restored /= text
+  , isSentenceCandidate restored
+  ]
+
+towardsPrepCandidates ∷ String → [String]
+towardsPrepCandidates text =
+  filter (/= text)
+    [ trim (replaceAllInsensitive " towards " " to " (" " <> text <> " "))
+    ]
+
+amongWhichCoreCandidates ∷ String → [String]
+amongWhichCoreCandidates text =
+  [ core
+  | candidate <- amongWhichTailCandidates text
+  , core <- candidate : trailingThatAreCandidates candidate
+  , core /= text
+  , isSentenceCandidate core
+  ]
+
+amongWhichTailCandidates ∷ String → [String]
+amongWhichTailCandidates text =
+  nub (trimmedColon ++ trimmedComma ++ trimmedBare)
+  where
+    trimmedColon =
+      case splitOnSubstringInsensitive ": among which " text of
+        Just (prefix, _) ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        _ -> []
+    trimmedComma =
+      case splitOnSubstringInsensitive ", among which " text of
+        Just (prefix, _) ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        _ -> []
+    trimmedBare =
+      case splitOnSubstringInsensitive " among which " text of
+        Just (prefix, _) ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        _ -> []
+
+trailingThatAreCandidates ∷ String → [String]
+trailingThatAreCandidates text =
+  [ candidate
+  | marker <- [" that are", " that are:", " that are :"]
+  , Just (prefix, suffix) <- [splitOnSubstringInsensitive marker text]
+  , null (trim suffix)
+  , let candidate = trim prefix
+  , candidate /= text
+  , isSentenceCandidate candidate
+  ]
+
+superlativeCoordToManyCandidates ∷ String → [String]
+superlativeCoordToManyCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive " the most and the biggest " " many " (" " <> text <> " ")
+    , replaceAllInsensitive " the biggest and the most " " many " (" " <> text <> " ")
+    ]
+    >>= \candidate -> [trim candidate]
+
+amongLeadInCandidates ∷ String → [String]
+amongLeadInCandidates text =
+  case splitOnSubstring ", " text of
+    Just (prefix, suffix)
+      | "among " `isPrefixOf` map toLower (trim prefix) ->
+          let candidate = trim suffix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+    _ -> []
+
+ofSizeCopulaCandidates ∷ String → [String]
+ofSizeCopulaCandidates text =
+  [ candidate
+  | (marker, copula) <- markers
+  , Just (prefix, suffix) <- [splitOnSubstringInsensitive marker text]
+  , Just adjPhrase <- [stripTrailingSize suffix]
+  , let candidate = trim (prefix <> copula <> adjPhrase)
+  , candidate /= text
+  , isSentenceCandidate candidate
+  ]
+  where
+    markers =
+      [ (" was of a most ", " was ")
+      , (" is of a most ", " is ")
+      , (" were of a most ", " were ")
+      , (" are of a most ", " are ")
+      , (" was of a ", " was ")
+      , (" is of a ", " is ")
+      , (" were of a ", " were ")
+      , (" are of a ", " are ")
+      ]
+
+stripTrailingSize ∷ String → Maybe String
+stripTrailingSize suffix =
+  let trimmed = trim suffix
+      lower = map toLower trimmed
+      sizeSuffix = " size"
+  in if endsWith lower sizeSuffix
+       then
+         let adj = trim (take (length trimmed - length sizeSuffix) trimmed)
+             tokens = normalizedWordTokens adj
+         in if not (null tokens) && length tokens <= 3 && all isWordLikeToken tokens
+              then Just adj
+              else Nothing
+       else Nothing
+
 forLeadInCandidates ∷ String → [String]
 forLeadInCandidates text =
   case stripLeadingPhraseInsensitive "for " text of
     Just candidate -> [candidate | candidate /= text, isSentenceCandidate candidate]
     Nothing -> []
+
+postWhenClauseCandidates ∷ String → [String]
+postWhenClauseCandidates text =
+  case splitOnSubstringInsensitive ", when " text of
+    Just (_, suffix) ->
+      let candidate = trim suffix
+      in [candidate | candidate /= text, isSentenceCandidate candidate]
+    Nothing -> []
+
+temporalLeadInCandidates ∷ String → [String]
+temporalLeadInCandidates text =
+  [ candidate
+  | marker <- markers
+  , Just candidate <- [stripLeadingPhraseInsensitive marker text]
+  , candidate /= text
+  , isSentenceCandidate candidate
+  ]
+  where
+    markers =
+      [ "about sunrise "
+      , "at sunrise "
+      , "about sunset "
+      , "at sunset "
+      , "at dawn "
+      , "at dusk "
+      ]
+
+alsoAdverbDropCandidates ∷ String → [String]
+alsoAdverbDropCandidates text =
+  filter (/= text)
+    [ trim (replaceAllInsensitive " also " " " (" " <> text <> " "))
+    ]
+
+ofWhichTailCandidates ∷ String → [String]
+ofWhichTailCandidates text =
+  case splitOnSubstringInsensitive ", of which " text of
+    Just (prefix, suffix)
+      | looksHeavyOfWhichTail suffix ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+    _ -> []
+
+looksHeavyOfWhichTail ∷ String → Bool
+looksHeavyOfWhichTail suffix =
+  let tokens = normalizedWordTokens suffix
+      lower = map toLower suffix
+  in length tokens >= 5
+      && ("," `isInfixOf` suffix || " some " `isInfixOf` (" " <> lower <> " "))
 
 goneBeforeRelativeCandidates ∷ String → [String]
 goneBeforeRelativeCandidates text =
@@ -853,9 +1044,10 @@ restrictiveRelativeTailCandidates text =
 looksHeavyRelativeTail ∷ String → Bool
 looksHeavyRelativeTail tailText =
   let lower = map toLower tailText
+      padded = " " <> lower <> " "
       tokenCount = length (words lower)
   in tokenCount >= 6
-      && any (`isInfixOf` lower)
+      && any (`isInfixOf` padded)
            [ " will "
            , " would "
            , " shall "
@@ -1407,6 +1599,7 @@ normalizeArchaicToken token =
     "doth" -> "does"
     "hath" -> "has"
     "maketh" -> "makes"
+    "catched" -> "caught"
     lower
       | endsWith lower "eth"
       , length lower > 4 -> inflectThirdSingular (take (length lower - 3) lower)
@@ -1671,7 +1864,10 @@ looksParticipleLike ∷ String → Bool
 looksParticipleLike word =
   let normalized = map toLower (filter isAlpha word)
   in length normalized > 3
-      && (endsWith normalized "ed" || endsWith normalized "en")
+      && ( endsWith normalized "ed"
+            || endsWith normalized "en"
+            || (length normalized > 4 && endsWith normalized "ing")
+         )
 
 lowercaseFirstWord ∷ String → String
 lowercaseFirstWord text =
