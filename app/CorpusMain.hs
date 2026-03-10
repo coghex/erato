@@ -234,6 +234,7 @@ normalizeCorpusNoise =
 normalizeNoiseChar ∷ Char → Char
 normalizeNoiseChar c
   | isDashChar c = ' '
+  | c == '*' = ' '
   | otherwise = c
 
 isDashChar ∷ Char → Bool
