@@ -295,7 +295,7 @@ firstSignificantCharAfterPeriod (c : cs)
 
 isPeriodFollowerNoise ∷ Char → Bool
 isPeriodFollowerNoise c =
-  isSpace c || c `elem` ("\"'()[]{}_*-–—―" ∷ String)
+  isSpace c || c `elem` ("\"'“”‘’()[]{}_*-–—―" ∷ String)
 
 appendSpace ∷ String → String
 appendSpace [] = []
@@ -321,6 +321,8 @@ normalizeCorpusNoise =
 normalizeNoiseChar ∷ Char → Char
 normalizeNoiseChar c
   | isDashChar c = ' '
+  | c == '’' || c == '‘' = '\''
+  | c == '“' || c == '”' = '"'
   | otherwise = c
 
 isDashChar ∷ Char → Bool
@@ -346,13 +348,13 @@ isTokenEdgeNoise c =
   isTokenPrefixNoise c || c `elem` (",.;:!?" ∷ String)
 
 isTokenPrefixNoise ∷ Char → Bool
-isTokenPrefixNoise c = c `elem` ("\"'([{`" ∷ String)
+isTokenPrefixNoise c = c `elem` ("\"'“”‘’([{`" ∷ String)
 
 stripEdgeNoise ∷ String → String
 stripEdgeNoise =
   reverse . dropWhile isEdgeChar . reverse . dropWhile isEdgeChar
   where
-    isEdgeChar c = isSpace c || c `elem` ("\"'()[]{}," ∷ String)
+    isEdgeChar c = isSpace c || c `elem` ("\"'“”‘’()[]{}," ∷ String)
 
 trim ∷ String → String
 trim = reverse . dropWhile isSpace . reverse . dropWhile isSpace
@@ -454,6 +456,7 @@ corpusRewriteCandidates text =
            ++ participialBylineCandidate text
            ++ semicolonVariants
            ++ concatMap casingNormalizedCandidate semicolonVariants
+           ++ concatMap directRewriteCandidates semicolonVariants
         )
 
 applyRewriteRounds ∷ Int → [String] → [String]
@@ -470,6 +473,15 @@ directRewriteCandidates text =
     ++ definiteArticleNameDropCandidates text
     ++ lexiconPluralCandidates text
     ++ progressiveEverCandidates text
+    ++ coordinatingLeadInCandidates text
+    ++ beItParentheticalCandidates text
+    ++ downFrontingCandidates text
+    ++ forLeadInCandidates text
+    ++ goneBeforeRelativeCandidates text
+    ++ clearingOutCandidates text
+    ++ andMakingTailTrimCandidates text
+    ++ omittedSubjectAndTailCandidates text
+    ++ againstTailTrimCandidates text
     ++ optativeWouldThatCandidates text
     ++ clearOutPhrasalCandidates text
     ++ archaicPronounCandidates text
@@ -477,6 +489,7 @@ directRewriteCandidates text =
     ++ comparativeCorrelativeCandidates text
     ++ invertedAuxClauseCandidates text
     ++ goPredicateCandidates text
+    ++ locativeRelativeTailCandidates text
     ++ restrictiveRelativeTailCandidates text
     ++ imperativeGiveItUpCandidates text
     ++ valedictionImperativeCandidates text
@@ -489,11 +502,13 @@ directRewriteCandidates text =
     ++ evidentialLeadInCandidates text
     ++ discourseLeadInCandidates text
     ++ commaParentheticalCandidates text
+    ++ contrastiveHereThereTailCandidates text
     ++ aggressiveClauseCoreCandidates text
     ++ etymologyGlossTailCandidates text
     ++ appositiveOfChainCandidates text
     ++ predicateTailTrimCandidates text
     ++ trailingForPhraseCandidates text
+    ++ purposeInfinitiveTailCandidates text
     ++ reduplicativeModifierCandidates text
     ++ archaicVerbCandidates text
     ++ passiveInfinitiveCandidates text
@@ -558,6 +573,113 @@ progressiveEverCandidates text =
     , replaceAllInsensitive " were ever " " were " (" " <> text <> " ")
     ]
     >>= \candidate -> [trim candidate]
+
+coordinatingLeadInCandidates ∷ String → [String]
+coordinatingLeadInCandidates text =
+  [ candidate
+  | marker <- markers
+  , Just candidate <- [stripLeadingPhraseInsensitive marker text]
+  , candidate /= text
+  , isSentenceCandidate candidate
+  ]
+  where
+    markers = ["and ", "but ", "so ", "yet ", "nor "]
+
+beItParentheticalCandidates ∷ String → [String]
+beItParentheticalCandidates text =
+  case splitOnSubstringInsensitive ", be it " text of
+    Just (prefix, rest) ->
+      case splitOnSubstringInsensitive ", down " rest of
+        Just (_, suffix) ->
+          let candidate = trim (prefix <> ", down " <> suffix)
+          in [candidate | isSentenceCandidate candidate]
+        _ -> []
+    _ -> []
+
+downFrontingCandidates ∷ String → [String]
+downFrontingCandidates text =
+  case splitOnSubstringInsensitive "down it " text of
+    Just (prefix, rest) ->
+      case words (trim rest) of
+        verb : trailing ->
+          let candidate =
+                trim
+                  ( prefix
+                      <> "it "
+                      <> verb
+                      <> " down"
+                      <> (if null trailing then "" else " " <> unwords trailing)
+                  )
+          in [candidate | isSentenceCandidate candidate]
+        _ -> []
+    _ -> []
+
+forLeadInCandidates ∷ String → [String]
+forLeadInCandidates text =
+  case stripLeadingPhraseInsensitive "for " text of
+    Just candidate -> [candidate | candidate /= text, isSentenceCandidate candidate]
+    Nothing -> []
+
+goneBeforeRelativeCandidates ∷ String → [String]
+goneBeforeRelativeCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive " who have gone before " " " text
+    , replaceAllInsensitive " who had gone before " " " text
+    ]
+
+clearingOutCandidates ∷ String → [String]
+clearingOutCandidates text =
+  filter (/= text)
+    [ replaceAllInsensitive " clearing out " " clearing " text
+    , replaceAllInsensitive " clear out " " clear " text
+    , replaceAllInsensitive " clears out " " clears " text
+    , replaceAllInsensitive " cleared out " " cleared " text
+    ]
+
+andMakingTailTrimCandidates ∷ String → [String]
+andMakingTailTrimCandidates text =
+  case splitOnSubstringInsensitive ", and making " text of
+    Just (prefix, _) ->
+      let candidate = trim prefix
+      in [candidate | candidate /= text, isSentenceCandidate candidate]
+    Nothing -> []
+
+omittedSubjectAndTailCandidates ∷ String → [String]
+omittedSubjectAndTailCandidates text =
+  case splitOnSubstringInsensitive ", and " text of
+    Just (_, suffix)
+      | startsWithLikelyFiniteVerb suffix ->
+          let candidate = "it " <> trim suffix
+          in [candidate | isSentenceCandidate candidate]
+    _ -> []
+
+startsWithLikelyFiniteVerb ∷ String → Bool
+startsWithLikelyFiniteVerb suffix =
+  case normalizedWordTokens suffix of
+    token : _ ->
+      let lower = map toLower token
+      in all isAlpha lower
+          && length lower >= 4
+          && (endsWith lower "s" || endsWith lower "eth")
+          && lower `notElem` ["this", "that", "there", "these", "those", "thus"]
+    _ -> False
+
+againstTailTrimCandidates ∷ String → [String]
+againstTailTrimCandidates text =
+  nub (trimmedComma ++ trimmedBare)
+  where
+    trimmedComma =
+      case splitOnSubstringInsensitive ", against " text of
+        Just (prefix, _) ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
+    trimmedBare =
+      case splitOnSubstringInsensitive " against " text of
+        Just (prefix, _) ->
+          let candidate = trim prefix
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
 
 properNameSpanCandidates ∷ String → [String]
 properNameSpanCandidates text =
@@ -689,11 +811,37 @@ isSingleAdjectiveLikeSuffix suffix =
         && length token >= 3
     _ -> False
 
+locativeRelativeTailCandidates ∷ String → [String]
+locativeRelativeTailCandidates text =
+  concatMap trimAtMarker markers
+  where
+    markers =
+      [ " that is in "
+      , " that is on "
+      , " that is at "
+      , " which is in "
+      , " which is on "
+      , " which is at "
+      ]
+    trimAtMarker marker =
+      case splitOnSubstringInsensitive marker text of
+        Just (prefix, suffix)
+          | looksShortLocativeTail suffix ->
+              let candidate = trim prefix
+              in [candidate | isSentenceCandidate candidate]
+        _ -> []
+
+looksShortLocativeTail ∷ String → Bool
+looksShortLocativeTail suffix =
+  let tokens = normalizedWordTokens suffix
+  in length tokens >= 1
+      && length tokens <= 4
+
 restrictiveRelativeTailCandidates ∷ String → [String]
 restrictiveRelativeTailCandidates text =
   concatMap trimAtMarker markers
   where
-    markers = [" which ", " that ", " who "]
+    markers = [" which ", " that ", " who ", " whom "]
     trimAtMarker marker =
       case splitOnSubstringInsensitive marker text of
         Just (prefix, tailText)
@@ -712,6 +860,10 @@ looksHeavyRelativeTail tailText =
            , " would "
            , " shall "
            , " should "
+           , " has "
+           , " have "
+           , " had "
+           , " hast "
            , " by "
            , " has been "
            , " have been "
@@ -907,7 +1059,7 @@ discourseLeadInCandidates text =
     markers =
       [ "therefore", "thus", "hence", "accordingly"
       , "however", "indeed", "moreover", "nevertheless"
-      , "consequently", "then"
+      , "consequently", "then", "now"
       ]
 
 stripLeadingDiscourseMarker ∷ String → String → Maybe String
@@ -935,6 +1087,34 @@ commaParentheticalCandidates text =
         _ -> []
     Nothing -> []
 
+contrastiveHereThereTailCandidates ∷ String → [String]
+contrastiveHereThereTailCandidates text
+  | not hasHereMarker = []
+  | otherwise = nub (fromThereComma ++ fromThereBare)
+  where
+    lowered = map toLower (trim text)
+    hasHereMarker =
+      "here " `isPrefixOf` lowered
+        || " here " `isInfixOf` (" " <> lowered <> " ")
+    fromThereComma =
+      case splitOnSubstringInsensitive " there, " text of
+        Just (_, suffix) ->
+          let candidate = trim suffix
+          in [candidate | isSentenceCandidate candidate, looksFiniteClauseStart candidate]
+        Nothing -> []
+    fromThereBare =
+      case splitOnSubstringInsensitive " there " text of
+        Just (_, suffix) ->
+          let candidate = trim suffix
+          in [candidate | isSentenceCandidate candidate, looksFiniteClauseStart candidate]
+        Nothing -> []
+
+looksFiniteClauseStart ∷ String → Bool
+looksFiniteClauseStart sentence =
+  case words (trim sentence) of
+    subj : aux : _ -> isPronounToken subj && isAuxiliaryToken aux
+    _ -> False
+
 aggressiveClauseCoreCandidates ∷ String → [String]
 aggressiveClauseCoreCandidates text =
   [simplified | simplified /= text, isSentenceCandidate simplified]
@@ -957,7 +1137,7 @@ stripAnyLeadingDiscourseMarker text =
     markers =
       [ "therefore", "thus", "hence", "accordingly"
       , "however", "indeed", "moreover", "nevertheless"
-      , "consequently", "then"
+      , "consequently", "then", "now"
       ]
 
 removeAllAdverbialParentheticals ∷ String → String
@@ -1090,6 +1270,24 @@ trailingForPhraseCandidates text =
           in [candidate | isSentenceCandidate candidate]
     _ -> []
 
+purposeInfinitiveTailCandidates ∷ String → [String]
+purposeInfinitiveTailCandidates text =
+  case splitOnSubstringInsensitive " to " text of
+    Just (prefix, suffix)
+      | looksPurposeInfinitiveTail suffix ->
+          let candidate = trim prefix
+          in [candidate | isSentenceCandidate candidate]
+    _ -> []
+
+looksPurposeInfinitiveTail ∷ String → Bool
+looksPurposeInfinitiveTail suffix =
+  case normalizedWordTokens suffix of
+    verb : rest ->
+      isWordLikeToken verb
+        && map toLower verb `notElem` ["a", "an", "the", "that", "which", "who", "whom"]
+        && length rest >= 1
+    _ -> False
+
 dropTrailingForAdjunct ∷ String → String
 dropTrailingForAdjunct text =
   case splitOnLastSubstringInsensitive " for " text of
@@ -1211,8 +1409,31 @@ normalizeArchaicToken token =
     "maketh" -> "makes"
     lower
       | endsWith lower "eth"
-      , length lower > 4 -> take (length lower - 3) lower <> "s"
+      , length lower > 4 -> inflectThirdSingular (take (length lower - 3) lower)
     lower -> lower
+
+inflectThirdSingular ∷ String → String
+inflectThirdSingular stem
+  | null stem = stem
+  | endsWith stem "sh" || endsWith stem "ch" || endsWith stem "ss" || finalChar `elem` ['s', 'x', 'z', 'o'] =
+      stem <> "es"
+  | finalChar == 'y'
+  , Just prev <- previousChar
+  , not (isVowelChar prev) =
+      take (length stem - 1) stem <> "ies"
+  | otherwise = stem <> "s"
+  where
+    finalChar =
+      case reverse stem of
+        c : _ -> c
+        [] -> ' '
+    previousChar =
+      case reverse stem of
+        _ : c : _ -> Just c
+        _ -> Nothing
+
+isVowelChar ∷ Char → Bool
+isVowelChar c = toLower c `elem` ['a', 'e', 'i', 'o', 'u']
 
 passiveInfinitiveCandidates ∷ String → [String]
 passiveInfinitiveCandidates text =
