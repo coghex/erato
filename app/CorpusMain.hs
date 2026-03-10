@@ -36,6 +36,7 @@ data ParseOutcome
   = ControlledParsed
   | FallbackParsed
   | AutoPassSingleWord
+  | AutoPassNameFragment
   | Unparsed
 
 data CorpusStats = CorpusStats
@@ -265,7 +266,7 @@ firstSignificantCharAfterPeriod (c : cs)
 
 isPeriodFollowerNoise ∷ Char → Bool
 isPeriodFollowerNoise c =
-  isSpace c || c `elem` ("\"'()[]{}" ∷ String)
+  isSpace c || c `elem` ("\"'()[]{}_*-–—―" ∷ String)
 
 appendSpace ∷ String → String
 appendSpace [] = []
@@ -370,6 +371,11 @@ accumulateOutcome grammars stats sentence =
         { statTotal = statTotal stats + 1
         , statAutoPass = statAutoPass stats + 1
         }
+    AutoPassNameFragment ->
+      stats
+        { statTotal = statTotal stats + 1
+        , statAutoPass = statAutoPass stats + 1
+        }
     Unparsed ->
       stats
         { statTotal = statTotal stats + 1
@@ -379,6 +385,7 @@ accumulateOutcome grammars stats sentence =
   where
     classifySentence bundle text
       | isSingleWordSentence text = AutoPassSingleWord
+      | isNameFragmentSentence text = AutoPassNameFragment
       | otherwise =
           case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
             Just outcome -> outcome
@@ -713,6 +720,34 @@ isSingleWordSentence text =
   case words text of
     [token] -> isWordLikeToken token
     _ -> False
+
+isNameFragmentSentence ∷ String → Bool
+isNameFragmentSentence text =
+  let tokens = map stripTokenEdgeNoise (words text)
+      nonEmptyTokens = filter (not . null) tokens
+      nonConnectorTokens = filter (not . isConnectorToken) nonEmptyTokens
+  in length nonConnectorTokens >= 2
+      && all isNameLikeToken nonConnectorTokens
+      && all (\token -> isConnectorToken token || isNameLikeToken token) nonEmptyTokens
+
+isConnectorToken ∷ String → Bool
+isConnectorToken token =
+  map toLower token `elem` ["and", "or", "&"]
+
+isNameLikeToken ∷ String → Bool
+isNameLikeToken token =
+  case firstAlphaChar token of
+    Just first ->
+      isUpper first
+        && all (\c -> isAlpha c || c == '\'' || c == '.') token
+        && any isAlpha token
+    Nothing -> False
+
+firstAlphaChar ∷ String → Maybe Char
+firstAlphaChar [] = Nothing
+firstAlphaChar (c : cs)
+  | isAlpha c = Just c
+  | otherwise = firstAlphaChar cs
 
 isWordLikeToken ∷ String → Bool
 isWordLikeToken token =
