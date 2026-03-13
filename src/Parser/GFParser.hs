@@ -27,6 +27,20 @@ data GrammarBundle = GrammarBundle
   , controlledMorpho ∷ Morpho
   }
 
+data ParsedParse a = ParsedParse
+  { parsedSentence ∷ Sentence
+  , parsedValue    ∷ a
+  , parsedMetrics  ∷ SentenceMetrics
+  }
+
+data SentenceMetrics = SentenceMetrics
+  { metricPossessiveCount     ∷ Int
+  , metricFormPenalty         ∷ Int
+  , metricLexicalPenalty      ∷ Int
+  , metricDisambiguationPenalty ∷ Int
+  , metricBareNounPenalty     ∷ Int
+  }
+
 loadGrammars ∷ FilePath → FilePath → IO GrammarBundle
 loadGrammars controlledPath fallbackPath = do
   c <- readPGF controlledPath
@@ -40,84 +54,83 @@ loadGrammars controlledPath fallbackPath = do
 
 parseControlled ∷ GrammarBundle → String → [Expr]
 parseControlled bundle input =
-  let pgf            = controlledPgf bundle
-      lang           = controlledLang bundle
-      morpho         = controlledMorpho bundle
-      typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
-      normalized     = normalizePossessives rewrittenInput
-      parseInput
-        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
-        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = parse pgf lang typ parseInput
-      validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
-      filteredParses = filterPossessiveParses normalized validParses
-  in map snd filteredParses
+  map parsedValue (parseControlledResults bundle input)
 
 parseControlledSentences ∷ GrammarBundle → String → [Sentence]
 parseControlledSentences bundle input =
-  let pgf            = controlledPgf bundle
-      lang           = controlledLang bundle
-      morpho         = controlledMorpho bundle
-      typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
-      normalized     = normalizePossessives rewrittenInput
-      parseInput
-        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
-        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = parse pgf lang typ parseInput
-      validParses    = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (validatedSentence morpho expr)) parses
-      filteredParses = filterPossessiveParses normalized validParses
-  in map fst filteredParses
+  map parsedSentence (parseControlledResults bundle input)
 
 parsePreferredControlledSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredControlledSentence bundle input =
-  preferSentence (parseControlledSentences bundle input)
+  fmap parsedSentence (preferParsedParse (parseControlledResults bundle input))
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
-  let pgf            = fallbackPgf bundle
-      mLang          = fallbackLang bundle
-      morpho         = controlledMorpho bundle
-      typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
-      normalized     = normalizePossessives rewrittenInput
-      parseInput
-        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
-        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = case mLang of
-        Just lang -> parse pgf lang typ parseInput
-        Nothing -> concat (parseAll pgf typ parseInput)
-      parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
-      filteredParses = filterPossessiveParses normalized parsedSentences
-  in map snd filteredParses
+  map parsedValue (parseFallbackResults bundle input)
 
 parseFallbackSentences ∷ GrammarBundle → String → [Sentence]
 parseFallbackSentences bundle input =
-  let pgf            = fallbackPgf bundle
-      mLang          = fallbackLang bundle
-      morpho         = controlledMorpho bundle
-      typ            = startCat pgf
-      rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
-      normalized     = normalizePossessives rewrittenInput
-      parseInput
-        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
-        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
-      parses         = case mLang of
-        Just lang -> parse pgf lang typ parseInput
-        Nothing -> concat (parseAll pgf typ parseInput)
-      parsedSentences = mapMaybe (\expr -> fmap (\sentence -> (sentence, expr)) (exprToSentence expr)) parses
-      filteredParses = filterPossessiveParses normalized parsedSentences
-  in map fst filteredParses
+  map parsedSentence (parseFallbackResults bundle input)
 
 parsePreferredFallbackSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredFallbackSentence bundle input =
-  preferSentence (parseFallbackSentences bundle input)
+  fmap parsedSentence (preferParsedParse (parseFallbackResults bundle input))
 
 data NormalizedInput = NormalizedInput
   { normalizedInput        ∷ String
   , possessiveMarkerCount ∷ Int
   }
+
+parseControlledResults ∷ GrammarBundle → String → [ParsedParse Expr]
+parseControlledResults bundle input =
+  let pgf                = controlledPgf bundle
+      lang               = controlledLang bundle
+      morpho             = controlledMorpho bundle
+      typ                = startCat pgf
+      (normalized, text) = prepareParseInput morpho input
+      parses             = parse pgf lang typ text
+      validParses        = mapMaybe (validatedParse morpho) parses
+  in filterPossessiveParses normalized validParses
+
+parseFallbackResults ∷ GrammarBundle → String → [ParsedParse Expr]
+parseFallbackResults bundle input =
+  let pgf                = fallbackPgf bundle
+      mLang              = fallbackLang bundle
+      morpho             = controlledMorpho bundle
+      typ                = startCat pgf
+      (normalized, text) = prepareParseInput morpho input
+      parses             = case mLang of
+        Just lang -> parse pgf lang typ text
+        Nothing -> concat (parseAll pgf typ text)
+      parsedSentences    = mapMaybe fallbackParsedParse parses
+  in filterPossessiveParses normalized parsedSentences
+
+prepareParseInput ∷ Morpho → String → (NormalizedInput, String)
+prepareParseInput morpho input =
+  let rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
+      normalized = normalizePossessives rewrittenInput
+      parseInput
+        | possessiveMarkerCount normalized > 0 = normalizedInput normalized
+        | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
+  in (normalized, parseInput)
+
+validatedParse ∷ Morpho → Expr → Maybe (ParsedParse Expr)
+validatedParse morpho expr = do
+  sentence <- validatedSentence morpho expr
+  pure (makeParsedParse sentence expr)
+
+fallbackParsedParse ∷ Expr → Maybe (ParsedParse Expr)
+fallbackParsedParse expr = do
+  sentence <- exprToSentence expr
+  pure (makeParsedParse sentence expr)
+
+makeParsedParse ∷ Sentence → a → ParsedParse a
+makeParsedParse sentence value =
+  ParsedParse
+    { parsedSentence = sentence
+    , parsedValue = value
+    , parsedMetrics = sentenceMetrics sentence
+    }
 
 tokenizeInput ∷ String → String
 tokenizeInput input =
@@ -466,64 +479,15 @@ stripSuffix suffix s
   | suffix `isSuffixOf` s = Just (take (length s - length suffix) s)
   | otherwise             = Nothing
 
-filterPossessiveParses ∷ NormalizedInput → [(Sentence, a)] → [(Sentence, a)]
+filterPossessiveParses ∷ NormalizedInput → [ParsedParse a] → [ParsedParse a]
 filterPossessiveParses normalized parses
   | possessiveMarkerCount normalized == 0 = parses
   | otherwise =
-      let matching = filter ((== possessiveMarkerCount normalized) . sentencePossessiveCount . fst) parses
+      let matching =
+            filter
+              ((== possessiveMarkerCount normalized) . metricPossessiveCount . parsedMetrics)
+              parses
       in if null matching then parses else matching
-
-sentencePossessiveCount ∷ Sentence → Int
-sentencePossessiveCount (Sentence _ _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
-sentencePossessiveCount (Question _ _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
-sentencePossessiveCount (WhQuestion _ _ whClause) = whClausePossessiveCount whClause
-sentencePossessiveCount (Existential _ _ np) = nounPhrasePossessiveCount np
-sentencePossessiveCount (Imperative _ vp) = verbPhrasePossessiveCount vp
-
-nounPhrasePossessiveCount ∷ NounPhrase → Int
-nounPhrasePossessiveCount (ProperNoun _) = 0
-nounPhrasePossessiveCount (Pronoun _ _ _) = 0
-nounPhrasePossessiveCount (CommonNoun _ _ _ _ rel) = maybe 0 relClausePossessiveCount rel
-nounPhrasePossessiveCount (PossessedNoun owner _ _ _ rel) =
-  1 + nounPhrasePossessiveCount owner + maybe 0 relClausePossessiveCount rel
-nounPhrasePossessiveCount (CoordNP _ a b) =
-  nounPhrasePossessiveCount a + nounPhrasePossessiveCount b
-
-verbPhrasePossessiveCount ∷ VerbPhrase → Int
-verbPhrasePossessiveCount (Intransitive _) = 0
-verbPhrasePossessiveCount (Transitive _ np) = nounPhrasePossessiveCount np
-verbPhrasePossessiveCount (VVComplement _ vp) = verbPhrasePossessiveCount vp
-verbPhrasePossessiveCount (V2VComplement _ np vp) =
-  nounPhrasePossessiveCount np + verbPhrasePossessiveCount vp
-verbPhrasePossessiveCount (VSComplement _ sentence) = sentencePossessiveCount sentence
-verbPhrasePossessiveCount (Copula _) = 0
-verbPhrasePossessiveCount (Passive _) = 0
-verbPhrasePossessiveCount (Progressive vp) = verbPhrasePossessiveCount vp
-verbPhrasePossessiveCount (Perfective vp) = verbPhrasePossessiveCount vp
-verbPhrasePossessiveCount (VPWithAdv vp adv) = verbPhrasePossessiveCount vp + advPhrasePossessiveCount adv
-verbPhrasePossessiveCount (CoordVP _ a b) = verbPhrasePossessiveCount a + verbPhrasePossessiveCount b
-
-whClausePossessiveCount ∷ WhClause → Int
-whClausePossessiveCount (SubjectWh _ vp) = verbPhrasePossessiveCount vp
-whClausePossessiveCount (ObjectWh _ subj _) = nounPhrasePossessiveCount subj
-whClausePossessiveCount (SubjectDetWh _ queried vp) =
-  nounPhrasePossessiveCount queried + verbPhrasePossessiveCount vp
-whClausePossessiveCount (ObjectDetWh _ queried subj _) =
-  nounPhrasePossessiveCount queried + nounPhrasePossessiveCount subj
-whClausePossessiveCount (AdvWh _ subj vp) = nounPhrasePossessiveCount subj + verbPhrasePossessiveCount vp
-
-relClausePossessiveCount ∷ RelClause → Int
-relClausePossessiveCount (RelVP vp) = verbPhrasePossessiveCount vp
-relClausePossessiveCount (NegRelVP vp) = verbPhrasePossessiveCount vp
-relClausePossessiveCount (RelV2 _ np) = nounPhrasePossessiveCount np
-relClausePossessiveCount (NegRelV2 _ np) = nounPhrasePossessiveCount np
-relClausePossessiveCount (RelPrep _ np) = nounPhrasePossessiveCount np
-
-advPhrasePossessiveCount ∷ AdvPhrase → Int
-advPhrasePossessiveCount (PrepPhrase _ np) = nounPhrasePossessiveCount np
-advPhrasePossessiveCount (ClausePhrase _ sentence) = sentencePossessiveCount sentence
-advPhrasePossessiveCount (LexicalAdv _) = 0
-advPhrasePossessiveCount (ModifiedAdv _ adv) = advPhrasePossessiveCount adv
 
 validatedSentence ∷ Morpho → Expr → Maybe Sentence
 validatedSentence morpho expr =
@@ -536,210 +500,157 @@ validatedSentence morpho expr =
       | all (\w → null (lookupMorpho morpho w)) pns → Just sentence
       | otherwise                                   → Nothing
 
-preferSentence ∷ [Sentence] → Maybe Sentence
-preferSentence [] = Nothing
-preferSentence sentences =
-  Just (minimumBy (comparing sentencePenalty) sentences)
 
-sentencePenalty ∷ Sentence → (Int, Int, Int, Int)
-sentencePenalty sentence =
-  ( sentenceFormPenalty sentence
-  , sentenceLexicalPenalty sentence
-  , sentenceDisambiguationPenalty sentence
-  , sentenceBareNounPenalty sentence
+preferParsedParse ∷ [ParsedParse a] → Maybe (ParsedParse a)
+preferParsedParse [] = Nothing
+preferParsedParse parses =
+  Just (minimumBy (comparing (metricsPenaltyTuple . parsedMetrics)) parses)
+
+emptySentenceMetrics ∷ SentenceMetrics
+emptySentenceMetrics = SentenceMetrics 0 0 0 0 0
+
+sentenceMetricsDelta ∷ Int → Int → Int → Int → Int → SentenceMetrics
+sentenceMetricsDelta poss form lexical disamb bare =
+  SentenceMetrics poss form lexical disamb bare
+
+plusSentenceMetrics ∷ SentenceMetrics → SentenceMetrics → SentenceMetrics
+plusSentenceMetrics left right =
+  SentenceMetrics
+    { metricPossessiveCount =
+        metricPossessiveCount left + metricPossessiveCount right
+    , metricFormPenalty =
+        metricFormPenalty left + metricFormPenalty right
+    , metricLexicalPenalty =
+        metricLexicalPenalty left + metricLexicalPenalty right
+    , metricDisambiguationPenalty =
+        metricDisambiguationPenalty left + metricDisambiguationPenalty right
+    , metricBareNounPenalty =
+        metricBareNounPenalty left + metricBareNounPenalty right
+    }
+
+applyFormPenalty ∷ Int → SentenceMetrics → SentenceMetrics
+applyFormPenalty penalty metrics =
+  metrics
+    { metricFormPenalty = metricFormPenalty metrics + penalty
+    }
+
+embeddedSentenceMetrics ∷ Sentence → SentenceMetrics
+embeddedSentenceMetrics sentence =
+  let metrics = sentenceMetrics sentence
+  in metrics { metricFormPenalty = 0 }
+
+metricsPenaltyTuple ∷ SentenceMetrics → (Int, Int, Int, Int)
+metricsPenaltyTuple metrics =
+  ( metricFormPenalty metrics
+  , metricLexicalPenalty metrics
+  , metricDisambiguationPenalty metrics
+  , metricBareNounPenalty metrics
   )
 
-sentenceFormPenalty ∷ Sentence → Int
-sentenceFormPenalty (Imperative _ _) = 5
-sentenceFormPenalty _                = 0
+sentenceMetrics ∷ Sentence → SentenceMetrics
+sentenceMetrics (Sentence _ _ subj vp) =
+  nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
+sentenceMetrics (Question _ _ subj vp) =
+  nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
+sentenceMetrics (WhQuestion _ _ whClause) =
+  whClauseMetrics whClause
+sentenceMetrics (Existential _ _ np) =
+  nounPhraseMetrics np
+sentenceMetrics (Imperative _ vp) =
+  applyFormPenalty 5 (verbPhraseMetrics vp)
 
-sentenceLexicalPenalty ∷ Sentence → Int
-sentenceLexicalPenalty (Sentence _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
-sentenceLexicalPenalty (Question _ _ subj vp) = nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
-sentenceLexicalPenalty (WhQuestion _ _ whClause) = whClauseLexicalPenalty whClause
-sentenceLexicalPenalty (Existential _ _ np)   = nounPhraseLexicalPenalty np
-sentenceLexicalPenalty (Imperative _ vp)      = verbPhraseLexicalPenalty vp
+whClauseMetrics ∷ WhClause → SentenceMetrics
+whClauseMetrics (SubjectWh _ vp) =
+  verbPhraseMetrics vp
+whClauseMetrics (ObjectWh _ subj verb) =
+  nounPhraseMetrics subj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+whClauseMetrics (SubjectDetWh _ queried vp) =
+  nounPhraseMetrics queried `plusSentenceMetrics` verbPhraseMetrics vp
+whClauseMetrics (ObjectDetWh qword queried subj verb) =
+  nounPhraseMetrics queried
+    `plusSentenceMetrics` nounPhraseMetrics subj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) (objectDetComparativeAdverbPenalty qword queried) 0
+whClauseMetrics (AdvWh _ subj vp) =
+  nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
 
-sentenceBareNounPenalty ∷ Sentence → Int
-sentenceBareNounPenalty (Sentence _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
-sentenceBareNounPenalty (Question _ _ subj vp) = nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
-sentenceBareNounPenalty (WhQuestion _ _ whClause) = whClauseBarePenalty whClause
-sentenceBareNounPenalty (Existential _ _ np)   = nounPhraseBarePenalty np
-sentenceBareNounPenalty (Imperative _ vp)      = verbPhraseBarePenalty vp
+nounPhraseMetrics ∷ NounPhrase → SentenceMetrics
+nounPhraseMetrics (ProperNoun _) = emptySentenceMetrics
+nounPhraseMetrics (Pronoun _ _ _) = emptySentenceMetrics
+nounPhraseMetrics (CommonNoun detTxt _ noun number relClause) =
+  maybe emptySentenceMetrics relClauseMetrics relClause
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty noun) 0 barePenalty
+  where
+    barePenalty =
+      case detTxt of
+        Nothing ->
+          case number of
+            Singular -> 4
+            Plural -> 1
+        Just _ -> 0
+nounPhraseMetrics (PossessedNoun owner _ noun _ relClause) =
+  nounPhraseMetrics owner
+    `plusSentenceMetrics` maybe emptySentenceMetrics relClauseMetrics relClause
+    `plusSentenceMetrics` sentenceMetricsDelta 1 0 (functionWordPenalty noun) 0 0
+nounPhraseMetrics (CoordNP _ a b) =
+  nounPhraseMetrics a `plusSentenceMetrics` nounPhraseMetrics b
 
-sentenceDisambiguationPenalty ∷ Sentence → Int
-sentenceDisambiguationPenalty (Sentence _ _ subj vp) =
-  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
-sentenceDisambiguationPenalty (Question _ _ subj vp) =
-  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
-sentenceDisambiguationPenalty (WhQuestion _ _ whClause) =
-  whClauseDisambiguationPenalty whClause
-sentenceDisambiguationPenalty (Existential _ _ np) =
-  nounPhraseDisambiguationPenalty np
-sentenceDisambiguationPenalty (Imperative _ vp) =
-  verbPhraseDisambiguationPenalty vp
+verbPhraseMetrics ∷ VerbPhrase → SentenceMetrics
+verbPhraseMetrics (Intransitive verb) =
+  sentenceMetricsDelta 0 0 (functionWordPenalty verb) (ambiguousVerbHeadPenalty verb) 0
+verbPhraseMetrics (Transitive verb obj) =
+  nounPhraseMetrics obj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) disambPenalty 0
+  where
+    disambPenalty =
+      ambiguousVerbHeadPenalty verb + transitiveObjectAmbiguityPenalty obj
+verbPhraseMetrics (VVComplement verb vp) =
+  verbPhraseMetrics vp
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+verbPhraseMetrics (V2VComplement verb obj vp) =
+  nounPhraseMetrics obj
+    `plusSentenceMetrics` verbPhraseMetrics vp
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+verbPhraseMetrics (VSComplement verb sentence) =
+  embeddedSentenceMetrics sentence
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+verbPhraseMetrics (Copula adj) =
+  sentenceMetricsDelta 0 0 (functionWordPenalty adj) 0 0
+verbPhraseMetrics (Passive verb) =
+  sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+verbPhraseMetrics (Progressive vp) =
+  verbPhraseMetrics vp
+verbPhraseMetrics (Perfective vp) =
+  verbPhraseMetrics vp
+verbPhraseMetrics (VPWithAdv vp adv) =
+  verbPhraseMetrics vp `plusSentenceMetrics` advPhraseMetrics adv
+verbPhraseMetrics (CoordVP _ a b) =
+  verbPhraseMetrics a `plusSentenceMetrics` verbPhraseMetrics b
 
-whClauseDisambiguationPenalty ∷ WhClause → Int
-whClauseDisambiguationPenalty (SubjectWh _ vp) = verbPhraseDisambiguationPenalty vp
-whClauseDisambiguationPenalty (ObjectWh _ subj _) = nounPhraseDisambiguationPenalty subj
-whClauseDisambiguationPenalty (SubjectDetWh _ queried vp) =
-  nounPhraseDisambiguationPenalty queried + verbPhraseDisambiguationPenalty vp
-whClauseDisambiguationPenalty (ObjectDetWh qword queried subj _) =
-  nounPhraseDisambiguationPenalty queried
-    + nounPhraseDisambiguationPenalty subj
-    + objectDetComparativeAdverbPenalty qword queried
-whClauseDisambiguationPenalty (AdvWh _ subj vp) =
-  nounPhraseDisambiguationPenalty subj + verbPhraseDisambiguationPenalty vp
+advPhraseMetrics ∷ AdvPhrase → SentenceMetrics
+advPhraseMetrics (PrepPhrase _ np) =
+  nounPhraseMetrics np
+advPhraseMetrics (ClausePhrase _ sentence) =
+  embeddedSentenceMetrics sentence
+advPhraseMetrics (LexicalAdv adv) =
+  sentenceMetricsDelta 0 0 (functionWordPenalty adv) 0 0
+advPhraseMetrics (ModifiedAdv modifier adv) =
+  advPhraseMetrics adv
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty modifier) 0 0
 
-nounPhraseDisambiguationPenalty ∷ NounPhrase → Int
-nounPhraseDisambiguationPenalty (ProperNoun _) = 0
-nounPhraseDisambiguationPenalty (Pronoun _ _ _) = 0
-nounPhraseDisambiguationPenalty (PossessedNoun owner _ _ _ rel) =
-  nounPhraseDisambiguationPenalty owner + maybe 0 relClauseDisambiguationPenalty rel
-nounPhraseDisambiguationPenalty (CommonNoun _ _ _ _ rel) =
-  maybe 0 relClauseDisambiguationPenalty rel
-nounPhraseDisambiguationPenalty (CoordNP _ a b) =
-  nounPhraseDisambiguationPenalty a + nounPhraseDisambiguationPenalty b
-
-whClauseLexicalPenalty ∷ WhClause → Int
-whClauseLexicalPenalty (SubjectWh _ vp) = verbPhraseLexicalPenalty vp
-whClauseLexicalPenalty (ObjectWh _ subj verb) =
-  nounPhraseLexicalPenalty subj + functionWordPenalty verb
-whClauseLexicalPenalty (SubjectDetWh _ queried vp) =
-  nounPhraseLexicalPenalty queried + verbPhraseLexicalPenalty vp
-whClauseLexicalPenalty (ObjectDetWh _ queried subj verb) =
-  nounPhraseLexicalPenalty queried + nounPhraseLexicalPenalty subj + functionWordPenalty verb
-whClauseLexicalPenalty (AdvWh _ subj vp) =
-  nounPhraseLexicalPenalty subj + verbPhraseLexicalPenalty vp
-
-whClauseBarePenalty ∷ WhClause → Int
-whClauseBarePenalty (SubjectWh _ vp) = verbPhraseBarePenalty vp
-whClauseBarePenalty (ObjectWh _ subj _) = nounPhraseBarePenalty subj
-whClauseBarePenalty (SubjectDetWh _ queried vp) =
-  nounPhraseBarePenalty queried + verbPhraseBarePenalty vp
-whClauseBarePenalty (ObjectDetWh _ queried subj _) =
-  nounPhraseBarePenalty queried + nounPhraseBarePenalty subj
-whClauseBarePenalty (AdvWh _ subj vp) =
-  nounPhraseBarePenalty subj + verbPhraseBarePenalty vp
-
-nounPhraseLexicalPenalty ∷ NounPhrase → Int
-nounPhraseLexicalPenalty (ProperNoun _) = 0
-nounPhraseLexicalPenalty (Pronoun _ _ _) = 0
-nounPhraseLexicalPenalty (PossessedNoun owner _ noun _ rel) =
-  nounPhraseLexicalPenalty owner + functionWordPenalty noun + maybe 0 relClausePenalty rel
-nounPhraseLexicalPenalty (CommonNoun _ _ noun _ rel) =
-  functionWordPenalty noun + maybe 0 relClausePenalty rel
-nounPhraseLexicalPenalty (CoordNP _ a b) =
-  nounPhraseLexicalPenalty a + nounPhraseLexicalPenalty b
-
-nounPhraseBarePenalty ∷ NounPhrase → Int
-nounPhraseBarePenalty (ProperNoun _) = 0
-nounPhraseBarePenalty (Pronoun _ _ _) = 0
-nounPhraseBarePenalty (PossessedNoun _ _ _ _ rel) =
-  maybe 0 relClauseBarePenalty rel
-nounPhraseBarePenalty (CommonNoun Nothing _ _ Singular rel) =
-  4 + maybe 0 relClauseBarePenalty rel
-nounPhraseBarePenalty (CommonNoun Nothing _ _ Plural rel) =
-  1 + maybe 0 relClauseBarePenalty rel
-nounPhraseBarePenalty (CommonNoun _ _ _ _ rel) =
-  maybe 0 relClauseBarePenalty rel
-nounPhraseBarePenalty (CoordNP _ a b) =
-  nounPhraseBarePenalty a + nounPhraseBarePenalty b
-
-verbPhraseLexicalPenalty ∷ VerbPhrase → Int
-verbPhraseLexicalPenalty (Intransitive verb) = functionWordPenalty verb
-verbPhraseLexicalPenalty (Transitive verb obj) =
-  functionWordPenalty verb + nounPhraseLexicalPenalty obj
-verbPhraseLexicalPenalty (VVComplement verb vp) =
-  functionWordPenalty verb + verbPhraseLexicalPenalty vp
-verbPhraseLexicalPenalty (V2VComplement verb obj vp) =
-  functionWordPenalty verb + nounPhraseLexicalPenalty obj + verbPhraseLexicalPenalty vp
-verbPhraseLexicalPenalty (VSComplement verb sentence) =
-  functionWordPenalty verb + sentenceLexicalPenalty sentence
-verbPhraseLexicalPenalty (Copula adj) = functionWordPenalty adj
-verbPhraseLexicalPenalty (Passive verb) = functionWordPenalty verb
-verbPhraseLexicalPenalty (Progressive vp) = verbPhraseLexicalPenalty vp
-verbPhraseLexicalPenalty (Perfective vp) = verbPhraseLexicalPenalty vp
-verbPhraseLexicalPenalty (VPWithAdv vp adv) =
-  verbPhraseLexicalPenalty vp + advPhraseLexicalPenalty adv
-verbPhraseLexicalPenalty (CoordVP _ a b) =
-  verbPhraseLexicalPenalty a + verbPhraseLexicalPenalty b
-
-verbPhraseBarePenalty ∷ VerbPhrase → Int
-verbPhraseBarePenalty (Intransitive _) = 0
-verbPhraseBarePenalty (Transitive _ obj) = nounPhraseBarePenalty obj
-verbPhraseBarePenalty (VVComplement _ vp) = verbPhraseBarePenalty vp
-verbPhraseBarePenalty (V2VComplement _ obj vp) =
-  nounPhraseBarePenalty obj + verbPhraseBarePenalty vp
-verbPhraseBarePenalty (VSComplement _ sentence) = sentenceBareNounPenalty sentence
-verbPhraseBarePenalty (Copula _) = 0
-verbPhraseBarePenalty (Passive _) = 0
-verbPhraseBarePenalty (Progressive vp) = verbPhraseBarePenalty vp
-verbPhraseBarePenalty (Perfective vp) = verbPhraseBarePenalty vp
-verbPhraseBarePenalty (VPWithAdv vp adv) =
-  verbPhraseBarePenalty vp + advPhraseBarePenalty adv
-verbPhraseBarePenalty (CoordVP _ a b) =
-  verbPhraseBarePenalty a + verbPhraseBarePenalty b
-
-verbPhraseDisambiguationPenalty ∷ VerbPhrase → Int
-verbPhraseDisambiguationPenalty (Intransitive verb) =
-  ambiguousVerbHeadPenalty verb
-verbPhraseDisambiguationPenalty (Transitive verb obj) =
-  ambiguousVerbHeadPenalty verb
-    + transitiveObjectAmbiguityPenalty obj
-    + nounPhraseDisambiguationPenalty obj
-verbPhraseDisambiguationPenalty (VVComplement _ vp) = verbPhraseDisambiguationPenalty vp
-verbPhraseDisambiguationPenalty (V2VComplement _ obj vp) =
-  nounPhraseDisambiguationPenalty obj + verbPhraseDisambiguationPenalty vp
-verbPhraseDisambiguationPenalty (VSComplement _ sentence) = sentenceDisambiguationPenalty sentence
-verbPhraseDisambiguationPenalty (Copula _) = 0
-verbPhraseDisambiguationPenalty (Passive _) = 0
-verbPhraseDisambiguationPenalty (Progressive vp) = verbPhraseDisambiguationPenalty vp
-verbPhraseDisambiguationPenalty (Perfective vp) = verbPhraseDisambiguationPenalty vp
-verbPhraseDisambiguationPenalty (VPWithAdv vp adv) =
-  verbPhraseDisambiguationPenalty vp + advPhraseDisambiguationPenalty adv
-verbPhraseDisambiguationPenalty (CoordVP _ a b) =
-  verbPhraseDisambiguationPenalty a + verbPhraseDisambiguationPenalty b
-
-advPhraseLexicalPenalty ∷ AdvPhrase → Int
-advPhraseLexicalPenalty (PrepPhrase _ np) = nounPhraseLexicalPenalty np
-advPhraseLexicalPenalty (ClausePhrase _ sentence) = sentenceLexicalPenalty sentence
-advPhraseLexicalPenalty (LexicalAdv adv) = functionWordPenalty adv
-advPhraseLexicalPenalty (ModifiedAdv modifier adv) =
-  functionWordPenalty modifier + advPhraseLexicalPenalty adv
-
-advPhraseBarePenalty ∷ AdvPhrase → Int
-advPhraseBarePenalty (PrepPhrase _ np) = nounPhraseBarePenalty np
-advPhraseBarePenalty (ClausePhrase _ sentence) = sentenceBareNounPenalty sentence
-advPhraseBarePenalty (LexicalAdv _) = 0
-advPhraseBarePenalty (ModifiedAdv _ adv) = advPhraseBarePenalty adv
-
-advPhraseDisambiguationPenalty ∷ AdvPhrase → Int
-advPhraseDisambiguationPenalty (PrepPhrase _ np) = nounPhraseDisambiguationPenalty np
-advPhraseDisambiguationPenalty (ClausePhrase _ sentence) = sentenceDisambiguationPenalty sentence
-advPhraseDisambiguationPenalty (LexicalAdv _) = 0
-advPhraseDisambiguationPenalty (ModifiedAdv _ adv) = advPhraseDisambiguationPenalty adv
-
-relClausePenalty ∷ RelClause → Int
-relClausePenalty (RelVP vp) = verbPhraseLexicalPenalty vp
-relClausePenalty (NegRelVP vp) = verbPhraseLexicalPenalty vp
-relClausePenalty (RelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
-relClausePenalty (NegRelV2 verb np) = functionWordPenalty verb + nounPhraseLexicalPenalty np
-relClausePenalty (RelPrep _ np) = nounPhraseLexicalPenalty np
-
-relClauseBarePenalty ∷ RelClause → Int
-relClauseBarePenalty (RelVP vp) = verbPhraseBarePenalty vp
-relClauseBarePenalty (NegRelVP vp) = verbPhraseBarePenalty vp
-relClauseBarePenalty (RelV2 _ np) = nounPhraseBarePenalty np
-relClauseBarePenalty (NegRelV2 _ np) = nounPhraseBarePenalty np
-relClauseBarePenalty (RelPrep _ np) = nounPhraseBarePenalty np
-
-relClauseDisambiguationPenalty ∷ RelClause → Int
-relClauseDisambiguationPenalty (RelVP vp) = verbPhraseDisambiguationPenalty vp
-relClauseDisambiguationPenalty (NegRelVP vp) = verbPhraseDisambiguationPenalty vp
-relClauseDisambiguationPenalty (RelV2 _ np) = nounPhraseDisambiguationPenalty np
-relClauseDisambiguationPenalty (NegRelV2 _ np) = nounPhraseDisambiguationPenalty np
-relClauseDisambiguationPenalty (RelPrep _ np) = nounPhraseDisambiguationPenalty np
+relClauseMetrics ∷ RelClause → SentenceMetrics
+relClauseMetrics (RelVP vp) =
+  verbPhraseMetrics vp
+relClauseMetrics (NegRelVP vp) =
+  verbPhraseMetrics vp
+relClauseMetrics (RelV2 verb np) =
+  nounPhraseMetrics np
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+relClauseMetrics (NegRelV2 verb np) =
+  nounPhraseMetrics np
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+relClauseMetrics (RelPrep _ np) =
+  nounPhraseMetrics np
 
 transitiveObjectAmbiguityPenalty ∷ NounPhrase → Int
 transitiveObjectAmbiguityPenalty (CommonNoun Nothing adjs noun Singular Nothing)

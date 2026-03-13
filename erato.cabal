@@ -45,9 +45,10 @@ executable erato-corpus
     import:           warnings
     main-is:          CorpusMain.hs
     build-depends:    base
-                    , directory
-                    , erato
-                    , filepath
+                     , directory
+                     , erato
+                     , filepath
+                     , parallel
     hs-source-dirs:   app
     default-language: GHC2024
 

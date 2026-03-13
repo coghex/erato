@@ -8,19 +8,21 @@ module Parser.Translate
   , translateFallback
   ) where
 
-import PGF hiding (Token)
+import Control.Applicative ((<|>))
 import Data.Char (isAlpha, isSpace, toLower)
+import PGF hiding (Token)
 import Parser.AST
 
--- Public-API-only: parse from showExpr
+-- Prefer decoding PGF Expr directly; fall back to showExpr parsing for any
+-- shapes we do not recognize yet.
 exprToSentence ∷ Expr → Maybe Sentence
 exprToSentence expr = do
-  sexp <- parseSExp (showExpr [] expr)
+  sexp <- decodeExpr expr
   parseSentence sexp
 
 exprProperNouns ∷ Expr → [String]
 exprProperNouns expr =
-  case parseSExp (showExpr [] expr) of
+  case decodeExpr expr of
     Nothing   -> []
     Just sexp -> collectSymbPN sexp
 
@@ -28,6 +30,29 @@ collectSymbPN ∷ SExp → [String]
 collectSymbPN (List [Atom "SymbPN", StrLit s]) = [s]
 collectSymbPN (List xs) = concatMap collectSymbPN xs
 collectSymbPN _ = []
+
+decodeExpr ∷ Expr → Maybe SExp
+decodeExpr expr =
+  exprToSExp expr <|> parseSExp (showExpr [] expr)
+
+exprToSExp ∷ Expr → Maybe SExp
+exprToSExp expr =
+  case () of
+    _
+      | Just value <- unStr expr ->
+          Just (StrLit value)
+      | Just value <- unInt expr ->
+          Just (Atom (show value))
+      | Just value <- unFloat expr ->
+          Just (Atom (show value))
+      | Just (cid, args) <- unApp expr -> do
+          sexps <- traverse exprToSExp args
+          pure $
+            if null args
+              then Atom (showCId cid)
+              else List (Atom (showCId cid) : sexps)
+      | otherwise ->
+          Nothing
 
 -- S-expression model for parsing showExpr output
 data SExp
@@ -819,6 +844,6 @@ isAtomChar c = not (isSpace c) && c /= '(' && c /= ')'
 -- | Parse the Expr once, return the Sentence and all SymbPN strings together
 validateExpr ∷ Expr → Maybe (Sentence, [String])
 validateExpr expr = do
-  sexp <- parseSExp (showExpr [] expr)
+  sexp <- decodeExpr expr
   sentence <- parseSentence sexp
   pure (sentence, collectSymbPN sexp)

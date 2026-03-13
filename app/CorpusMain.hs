@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Parallel.Strategies (parList, rseq, withStrategy)
 import Data.Char (isAlpha, isAscii, isLower, isSpace, isUpper, toLower)
 import Data.List (isInfixOf, isPrefixOf, nub, sort)
 import Data.Maybe (mapMaybe)
@@ -15,6 +16,7 @@ import Parser.GFParser (GrammarBundle, loadGrammars, parsePreferredControlledSen
 data CorpusConfig = CorpusConfig
   { cfgFiles             ∷ [FilePath]
   , cfgDirs              ∷ [FilePath]
+  , cfgJobs              ∷ Int
   , cfgShowFailures      ∷ Int
   , cfgMaxSentences      ∷ Maybe Int
   , cfgStopAfterUnparsed ∷ Maybe Int
@@ -56,6 +58,7 @@ defaultConfig =
   CorpusConfig
     { cfgFiles = []
     , cfgDirs = []
+    , cfgJobs = 1
     , cfgShowFailures = 20
     , cfgMaxSentences = Nothing
     , cfgStopAfterUnparsed = Nothing
@@ -368,14 +371,34 @@ applyMaxSentences Nothing sentences = sentences
 applyMaxSentences (Just n) sentences = take n sentences
 
 processSentences ∷ CorpusConfig → GrammarBundle → CorpusStats → [CorpusSentence] → CorpusStats
-processSentences cfg grammars = go
+processSentences cfg grammars
+  | cfgJobs cfg <= 1 = goSequential
+  | otherwise = goParallel
   where
-    go stats [] = stats
-    go stats (sentence : rest)
+    goSequential stats [] = stats
+    goSequential stats (sentence : rest)
       | reachedUnparsedLimit cfg stats = stats
       | otherwise =
           let next = accumulateOutcome grammars stats sentence
-          in go next rest
+          in goSequential next rest
+
+    goParallel stats [] = stats
+    goParallel stats sentences
+      | reachedUnparsedLimit cfg stats = stats
+      | otherwise =
+          let (batch, rest) = splitAt (cfgJobs cfg) sentences
+              classifiedBatch =
+                withStrategy
+                  (parList rseq)
+                  (map (\sentence -> (sentence, classifySentence grammars (sentenceText sentence))) batch)
+              next = foldClassifiedBatch stats classifiedBatch
+          in goParallel next rest
+
+    foldClassifiedBatch stats [] = stats
+    foldClassifiedBatch stats _
+      | reachedUnparsedLimit cfg stats = stats
+    foldClassifiedBatch stats ((sentence, outcome) : rest) =
+      foldClassifiedBatch (accumulateClassifiedOutcome stats sentence outcome) rest
 
 reachedUnparsedLimit ∷ CorpusConfig → CorpusStats → Bool
 reachedUnparsedLimit cfg stats =
@@ -385,7 +408,11 @@ reachedUnparsedLimit cfg stats =
 
 accumulateOutcome ∷ GrammarBundle → CorpusStats → CorpusSentence → CorpusStats
 accumulateOutcome grammars stats sentence =
-  case classifySentence grammars (sentenceText sentence) of
+  accumulateClassifiedOutcome stats sentence (classifySentence grammars (sentenceText sentence))
+
+accumulateClassifiedOutcome ∷ CorpusStats → CorpusSentence → ParseOutcome → CorpusStats
+accumulateClassifiedOutcome stats sentence outcome =
+  case outcome of
     ControlledParsed ->
       stats
         { statTotal = statTotal stats + 1
@@ -419,17 +446,19 @@ accumulateOutcome grammars stats sentence =
         , statUnparsed = statUnparsed stats + 1
         , statFailures = appendFailureIfRoom (statShowLimit stats) (statFailures stats) sentence
         }
-  where
-    classifySentence bundle text
-      | isForeignDominantSentence text = DroppedJunk
-      | isForeignShortFragmentSentence text = AutoPassNameFragment
-      | isSingleWordSentence text = AutoPassSingleWord
-      | isNameFragmentSentence text = AutoPassNameFragment
-      | isInfinitiveGlossSentence text = AutoPassGlossFragment
-      | otherwise =
-          case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
-            Just outcome -> outcome
-            Nothing -> Unparsed
+
+
+classifySentence ∷ GrammarBundle → String → ParseOutcome
+classifySentence bundle text
+  | isForeignDominantSentence text = DroppedJunk
+  | isForeignShortFragmentSentence text = AutoPassNameFragment
+  | isSingleWordSentence text = AutoPassSingleWord
+  | isNameFragmentSentence text = AutoPassNameFragment
+  | isInfinitiveGlossSentence text = AutoPassGlossFragment
+  | otherwise =
+      case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
+        Just outcome -> outcome
+        Nothing -> Unparsed
 
 firstParsedOutcome ∷ GrammarBundle → [String] → Maybe ParseOutcome
 firstParsedOutcome _ [] = Nothing
@@ -2044,6 +2073,9 @@ parseArgs cfg ("--file" : path : rest) =
   parseArgs cfg {cfgFiles = cfgFiles cfg ++ [path]} rest
 parseArgs cfg ("--dir" : path : rest) =
   parseArgs cfg {cfgDirs = cfgDirs cfg ++ [path]} rest
+parseArgs cfg ("--jobs" : n : rest) = do
+  parsed <- parsePositiveInt "--jobs" n
+  parseArgs cfg {cfgJobs = parsed} rest
 parseArgs cfg ("--show-failures" : n : rest) = do
   parsed <- parseNonNegativeInt "--show-failures" n
   parseArgs cfg {cfgShowFailures = parsed} rest
@@ -2061,6 +2093,7 @@ parseArgs cfg ("--min-total-rate" : n : rest) = do
   parseArgs cfg {cfgMinTotalRate = Just parsed} rest
 parseArgs _ ("--file" : []) = Left "missing value for --file"
 parseArgs _ ("--dir" : []) = Left "missing value for --dir"
+parseArgs _ ("--jobs" : []) = Left "missing value for --jobs"
 parseArgs _ ("--show-failures" : []) = Left "missing value for --show-failures"
 parseArgs _ ("--max-sentences" : []) = Left "missing value for --max-sentences"
 parseArgs _ ("--stop-after-unparsed" : []) = Left "missing value for --stop-after-unparsed"
@@ -2072,6 +2105,12 @@ parseNonNegativeInt ∷ String → String → Either String Int
 parseNonNegativeInt flag input =
   case reads input of
     [(n, "")] | n >= 0 -> Right n
+    _ -> Left ("invalid value for " <> flag <> ": " <> input)
+
+parsePositiveInt ∷ String → String → Either String Int
+parsePositiveInt flag input =
+  case reads input of
+    [(n, "")] | n > 0 -> Right n
     _ -> Left ("invalid value for " <> flag <> ": " <> input)
 
 parseRate ∷ String → String → Either String Double
@@ -2087,7 +2126,7 @@ unwrapMaybeInt Nothing = 0
 usage ∷ String
 usage = unlines
   [ "Usage:"
-  , "  cabal run erato-corpus -- [--file PATH]... [--dir PATH]..."
+  , "  cabal run erato-corpus -- [--file PATH]... [--dir PATH]... [--jobs N]"
   , "                           [--show-failures N]"
   , "                           [--max-sentences N]"
   , "                           [--stop-after-unparsed N]"
@@ -2097,6 +2136,7 @@ usage = unlines
   , "Options:"
   , "  --file PATH               Add a specific .txt file."
   , "  --dir PATH                Recursively scan a directory for .txt files."
+  , "  --jobs N                  Parse up to N sentences in parallel (default: 1)."
   , "  --show-failures N         Print up to N unparsed examples (default: 20)."
   , "  --max-sentences N         Parse at most N sentence candidates."
   , "  --stop-after-unparsed N   Stop early after N unparsed sentences."
