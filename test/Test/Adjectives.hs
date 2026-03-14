@@ -58,3 +58,44 @@ spec grammars = describe "Adjectives" $ do
         (CommonNoun (Just "the") ["biggest"] "dog" Singular
           (Just (RelPrep "in" (CommonNoun (Just "the") [] "park" Singular Nothing))))
         (Intransitive "run")
+
+  it "parses hyphenated adjective in NP: the higgledy-piggledy whale runs" $ do
+    let exprs = parseControlled grammars "the higgledy-piggledy whale runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["higgledy-piggledy"] "whale" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses however-authentic as a postnominal adjective phrase" $ do
+    let exprs = parseControlled grammars "the statements however authentic run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "statement" Plural
+          (Just (PostAdj (ModifiedAdj "however" (BareAdj "authentic")))))
+        (Intransitive "run")
+
+  it "parses gospel as a curated attributive adjective: the veritable gospel cetology runs" $ do
+    let exprs = parseControlled grammars "the veritable gospel cetology runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["veritable", "gospel"] "cetology" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses negated attributive adjective phrase: the not unpleasant sadness runs" $ do
+    let exprs = parseControlled grammars "the not unpleasant sadness runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["not", "unpleasant"] "sadness" Singular Nothing)
+        (Intransitive "run")
+
+  it "parses modified negated attributive adjective phrase: the not altogether unpleasant sadness runs" $ do
+    let exprs = parseControlled grammars "the not altogether unpleasant sadness runs"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") ["not", "altogether", "unpleasant"] "sadness" Singular Nothing)
+        (Intransitive "run")

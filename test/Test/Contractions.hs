@@ -32,7 +32,7 @@ spec grammars = describe "Contractions" $ do
     exprs `shouldParseAs`
       Sentence Present Positive
         (Pronoun Third Singular Subjective)
-        (Copula "big")
+        (Copula (BareAdj "big"))
 
   it "parses perfect contraction: they've run" $ do
     let exprs = parseControlled grammars "they've run"

@@ -18,7 +18,7 @@ spec grammars = describe "Possessives" $ do
         (PossessedNoun
           (CommonNoun (Just "the") [] "dog" Singular Nothing)
           [] "food" Singular Nothing)
-        (Copula "big")
+        (Copula (BareAdj "big"))
 
   it "parses proper noun possessive: John's dog runs" $ do
     let exprs = parseControlled grammars "John's dog runs"
@@ -38,7 +38,7 @@ spec grammars = describe "Possessives" $ do
         (PossessedNoun
           (CommonNoun (Just "the") [] "dog" Plural Nothing)
           [] "food" Singular Nothing)
-        (Copula "big")
+        (Copula (BareAdj "big"))
 
   it "parses possessive with adjective: John's red dog runs" $ do
     let exprs = parseControlled grammars "John's red dog runs"
@@ -57,7 +57,7 @@ spec grammars = describe "Possessives" $ do
           (PossessedNoun
             (CommonNoun (Just "the") [] "dog" Singular Nothing)
             [] "food" Singular Nothing)
-          (Copula "big"))
+          (Copula (BareAdj "big")))
 
   it "prefers the possessive parse for John's red dog runs" $ do
     parsePreferredControlledSentence grammars "John's red dog runs" `shouldBe`

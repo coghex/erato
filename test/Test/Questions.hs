@@ -42,6 +42,14 @@ spec grammars = describe "Questions" $ do
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
         (Intransitive "run")
 
+  it "parses conditional question: would the dog run" $ do
+    let exprs = parseControlled grammars "would the dog run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Question Conditional Positive
+        (CommonNoun (Just "the") [] "dog" Singular Nothing)
+        (Intransitive "run")
+
   it "parses perfect question: has the dog run" $ do
     let exprs = parseControlled grammars "has the dog run"
     shouldParse exprs
@@ -64,7 +72,15 @@ spec grammars = describe "Questions" $ do
     exprs `shouldParseAs`
       Question Present Positive
         (CommonNoun (Just "the") [] "dog" Singular Nothing)
-        (Copula "big")
+        (Copula (BareAdj "big"))
+
+  it "parses conditional locative copula question: would Lazarus be in the park" $ do
+    let exprs = parseControlled grammars "would Lazarus be in the park"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Question Conditional Positive
+        (ProperNoun "Lazarus")
+        (CopulaAdv (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing)))
 
   it "parses negative question: does the dog not run" $ do
     let exprs = parseControlled grammars "does the dog not run"
@@ -286,7 +302,7 @@ spec grammars = describe "Questions" $ do
         (SubjectDetWh Which
           (CommonNoun (Just "which") [] "dog" Singular Nothing)
           (VPWithAdv
-            (Copula "bigger")
+            (Copula (BareAdj "bigger"))
             (PrepPhrase "than" (CommonNoun (Just "the") [] "cat" Singular Nothing))))
 
   it "parses comparative quantifier object wh-question: how much less food does the dog eat" $ do
@@ -338,6 +354,40 @@ spec grammars = describe "Questions" $ do
         (AdvWh How
           (CommonNoun (Just "the") [] "dog" Singular Nothing)
           (Intransitive "run"))
+
+  it "parses coordinated passive wh-question: what has been said and sung of Leviathan" $ do
+    let exprs = parseControlled grammars "what has been said and sung of Leviathan"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectWh What
+          (VPWithAdv
+            (Perfective
+              (CoordVP And
+                (Passive "say")
+                (Passive "sing")))
+            (PrepPhrase "of" (ProperNoun "Leviathan"))))
+
+  it "parses corpus-style coordinated passive wh-question" $ do
+    let exprs = parseControlled grammars "what has been promiscuously said thought fancied and sung of Leviathan"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      WhQuestion Present Positive
+        (SubjectWh What
+          (VPWithAdv
+            (Perfective
+              (VPWithAdv
+                (CoordVP And
+                  (Passive "say")
+                  (CoordVP And
+                    (Passive "think")
+                    (CoordVP And (Passive "fancy") (Passive "sing"))))
+                (LexicalAdv "promiscuous")))
+            (PrepPhrase "of" (ProperNoun "Leviathan"))))
+
+  it "parses coordinated passive wh-question with including-tail adjunct" $ do
+    let exprs = parseControlled grammars "what has been promiscuously said thought fancied and sung of Leviathan by many nations and generations including our own"
+    shouldParse exprs
 
   it "parses comparative adverb how-much question: how much faster does the dog run" $ do
     let exprs = parseControlled grammars "how much faster does the dog run"

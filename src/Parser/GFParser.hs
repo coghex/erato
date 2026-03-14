@@ -16,7 +16,7 @@ import Data.List (isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import PGF
-import Parser.AST (AdvPhrase(..), NounPhrase(..), Number(..), QuestionWord(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
+import Parser.AST (AdjPhrase(..), AdvPhrase(..), NounPhrase(..), Number(..), QuestionWord(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
 import Parser.Translate (exprToSentence, validateExpr)
 
 data GrammarBundle = GrammarBundle
@@ -87,8 +87,9 @@ parseControlledResults bundle input =
       lang               = controlledLang bundle
       morpho             = controlledMorpho bundle
       typ                = startCat pgf
-      (normalized, text) = prepareParseInput morpho input
-      parses             = parse pgf lang typ text
+      preparedInputs     = prepareParseInputs morpho input
+      normalized         = primaryNormalizedInput input preparedInputs
+      parses             = concatMap (\(_, text) → parse pgf lang typ text) preparedInputs
       validParses        = mapMaybe (validatedParse morpho) parses
   in filterPossessiveParses normalized validParses
 
@@ -98,21 +99,78 @@ parseFallbackResults bundle input =
       mLang              = fallbackLang bundle
       morpho             = controlledMorpho bundle
       typ                = startCat pgf
-      (normalized, text) = prepareParseInput morpho input
-      parses             = case mLang of
-        Just lang -> parse pgf lang typ text
-        Nothing -> concat (parseAll pgf typ text)
+      preparedInputs     = prepareParseInputs morpho input
+      normalized         = primaryNormalizedInput input preparedInputs
+      parses             = concatMap
+        (\(_, text) →
+          case mLang of
+            Just lang -> parse pgf lang typ text
+            Nothing -> concat (parseAll pgf typ text))
+        preparedInputs
       parsedSentences    = mapMaybe fallbackParsedParse parses
   in filterPossessiveParses normalized parsedSentences
 
-prepareParseInput ∷ Morpho → String → (NormalizedInput, String)
-prepareParseInput morpho input =
-  let rewrittenInput = normalizeSentenceInitialPronoun (normalizeDegreeModifiers (normalizeObjectComparativeWh (normalizeQuestionNegationOrder (normalizeContractions (tokenizeInput input)))))
-      normalized = normalizePossessives rewrittenInput
+prepareParseInputs ∷ Morpho → String → [(NormalizedInput, String)]
+prepareParseInputs morpho input =
+  let tokenized = tokenizeInput input
+      rewrittenInputs =
+        uniqueStrings
+          [ rewriteParseInput tokenized
+          , rewriteParseInput (normalizeKnownTokenCase morpho tokenized)
+          ]
+  in map (finalizeParseInput morpho) rewrittenInputs
+
+rewriteParseInput ∷ String → String
+rewriteParseInput =
+  normalizeSentenceInitialPronoun
+    . normalizeSentenceInitialBut
+    . normalizeLiteraryNames
+    . normalizeDegreeModifiers
+    . normalizeComparativeCorrelatives
+    . normalizeObjectComparativeWh
+    . normalizeQuestionNegationOrder
+    . normalizeContractions
+
+normalizeLiteraryNames ∷ String → String
+normalizeLiteraryNames input =
+  unwords (rewriteLiteraryNameTokens (words input))
+
+rewriteLiteraryNameTokens ∷ [String] → [String]
+rewriteLiteraryNameTokens [] = []
+rewriteLiteraryNameTokens (first : second : rest)
+  | map toLower first == "hampton"
+  , map toLower second == "court" =
+      (first ++ "-" ++ second) : rewriteLiteraryNameTokens rest
+rewriteLiteraryNameTokens (article : name : rest)
+  | map toLower article == "the"
+  , map toLower name == "tuileries" =
+      name : rewriteLiteraryNameTokens rest
+rewriteLiteraryNameTokens (token : rest)
+  | map toLower token == "royal-mast" =
+      "royal" : "mast" : rewriteLiteraryNameTokens rest
+rewriteLiteraryNameTokens (token : rest) =
+  token : rewriteLiteraryNameTokens rest
+
+finalizeParseInput ∷ Morpho → String → (NormalizedInput, String)
+finalizeParseInput morpho rewrittenInput =
+  let normalized = normalizePossessives rewrittenInput
       parseInput
         | possessiveMarkerCount normalized > 0 = normalizedInput normalized
         | otherwise = normalizeSentenceInitialTokenCase morpho (normalizedInput normalized)
   in (normalized, parseInput)
+
+primaryNormalizedInput ∷ String → [(NormalizedInput, String)] → NormalizedInput
+primaryNormalizedInput input preparedInputs =
+  case preparedInputs of
+    (normalized, _) : _ -> normalized
+    []                -> NormalizedInput input 0
+
+uniqueStrings ∷ [String] → [String]
+uniqueStrings = foldr addUnique []
+  where
+    addUnique value acc
+      | value `elem` acc = acc
+      | otherwise        = value : acc
 
 validatedParse ∷ Morpho → Expr → Maybe (ParsedParse Expr)
 validatedParse morpho expr = do
@@ -141,8 +199,18 @@ tokenizeInput input =
 normalizeTokenChar ∷ Char → Char
 normalizeTokenChar c
   | c == '’' = '\''
-  | isAlphaNum c || c == '\'' = c
+  | isAlphaNum c || c == '\'' || c == '-' = c
   | otherwise = ' '
+
+normalizeKnownTokenCase ∷ Morpho → String → String
+normalizeKnownTokenCase morpho =
+  unwords . map normalizeToken . words
+  where
+    normalizeToken token
+      | not (any isUpper token) = token
+      | otherwise =
+          let lowered = map toLower token
+          in if null (lookupMorpho morpho lowered) then token else lowered
 
 cleanToken ∷ String → String
 cleanToken token =
@@ -170,6 +238,10 @@ normalizeObjectComparativeWh ∷ String → String
 normalizeObjectComparativeWh input =
   unwords (rewriteObjectComparativeWhTokens (words input))
 
+normalizeComparativeCorrelatives ∷ String → String
+normalizeComparativeCorrelatives input =
+  unwords (rewriteComparativeCorrelativeTokens (words input))
+
 rewriteQuestionNegationTokens ∷ [String] → [String]
 rewriteQuestionNegationTokens (wh : aux : "not" : det : noun : rest)
   | isWhToken wh && isInversionAux aux && isDetToken det =
@@ -192,6 +264,23 @@ rewriteObjectComparativeWhTokens (wh : noun : aux : rest)
                 ++ compTail ++ [aux] ++ subj ++ [matrixVerb]
         _ -> wh : noun : aux : rest
 rewriteObjectComparativeWhTokens tokens = tokens
+
+rewriteComparativeCorrelativeTokens ∷ [String] → [String]
+rewriteComparativeCorrelativeTokens [] = []
+rewriteComparativeCorrelativeTokens ("by" : "how" : "much" : "the" : "more" : "pains" : "ye" : takeTok : rest)
+  | map toLower takeTok == "take" =
+      ["by", "how", "much", "ye", takeTok, "the", "more", "pains"]
+        ++ rewriteComparativeCorrelativeTokens rest
+rewriteComparativeCorrelativeTokens ("For" : "by" : "how" : "much" : rest) =
+      rewriteComparativeCorrelativeTokens ("by" : "how" : "much" : rest)
+rewriteComparativeCorrelativeTokens ("for" : "by" : "how" : "much" : rest) =
+      rewriteComparativeCorrelativeTokens ("by" : "how" : "much" : rest)
+rewriteComparativeCorrelativeTokens ("by" : "so" : "much" : "the" : "more" : shallTok : "ye" : rest)
+  | map toLower shallTok == "shall" =
+      ["by", "so", "much", "the", "more", "ye", shallTok]
+        ++ rewriteComparativeCorrelativeTokens rest
+rewriteComparativeCorrelativeTokens (token : rest) =
+  token : rewriteComparativeCorrelativeTokens rest
 
 isObjectWhAux ∷ String → Bool
 isObjectWhAux token =
@@ -422,6 +511,14 @@ rewriteInitialPronounToken "i’ll" = Just ["I", "will"]
 rewriteInitialPronounToken "I’ll" = Just ["I", "will"]
 rewriteInitialPronounToken _ = Nothing
 
+normalizeSentenceInitialBut ∷ String → String
+normalizeSentenceInitialBut input =
+  case words input of
+    token : rest
+      | map toLower token == "but" ->
+          unwords rest
+    _ -> input
+
 normalizeSentenceInitialTokenCase ∷ Morpho → String → String
 normalizeSentenceInitialTokenCase morpho input =
   case words input of
@@ -550,6 +647,10 @@ metricsPenaltyTuple metrics =
 sentenceMetrics ∷ Sentence → SentenceMetrics
 sentenceMetrics (Sentence _ _ subj vp) =
   nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
+sentenceMetrics (SentenceWithAdv sentence adv) =
+  sentenceMetrics sentence `plusSentenceMetrics` advPhraseMetrics adv
+sentenceMetrics (Vocative sentence np) =
+  sentenceMetrics sentence `plusSentenceMetrics` nounPhraseMetrics np
 sentenceMetrics (Question _ _ subj vp) =
   nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
 sentenceMetrics (WhQuestion _ _ whClause) =
@@ -576,10 +677,17 @@ whClauseMetrics (AdvWh _ subj vp) =
 
 nounPhraseMetrics ∷ NounPhrase → SentenceMetrics
 nounPhraseMetrics (ProperNoun _) = emptySentenceMetrics
+nounPhraseMetrics (Demonstrative _ _) = emptySentenceMetrics
 nounPhraseMetrics (Pronoun _ _ _) = emptySentenceMetrics
-nounPhraseMetrics (CommonNoun detTxt _ noun number relClause) =
+nounPhraseMetrics (CommonNoun detTxt adjs noun number relClause) =
   maybe emptySentenceMetrics relClauseMetrics relClause
-    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty noun) 0 barePenalty
+    `plusSentenceMetrics`
+      sentenceMetricsDelta
+        0
+        0
+        (functionWordPenalty noun)
+        (comparativeRelAttachmentPenalty adjs relClause)
+        barePenalty
   where
     barePenalty =
       case detTxt of
@@ -614,8 +722,33 @@ verbPhraseMetrics (V2VComplement verb obj vp) =
 verbPhraseMetrics (VSComplement verb sentence) =
   embeddedSentenceMetrics sentence
     `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+verbPhraseMetrics (PassiveVSComplement verb sentence) =
+  embeddedSentenceMetrics sentence
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
 verbPhraseMetrics (Copula adj) =
-  sentenceMetricsDelta 0 0 (functionWordPenalty adj) 0 0
+  adjPhraseMetrics adj
+verbPhraseMetrics (CopulaNP np) =
+  nounPhraseMetrics np
+verbPhraseMetrics (CopulaAdv adv) =
+  advPhraseMetrics adv
+verbPhraseMetrics (SeemAdj adj) =
+  adjPhraseMetrics adj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "seem") 0 0
+verbPhraseMetrics (SeemNP np) =
+  nounPhraseMetrics np
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "seem") 0 0
+verbPhraseMetrics (SeemAdv adv) =
+  advPhraseMetrics adv
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "seem") 0 0
+verbPhraseMetrics (FeelAdj adj) =
+  adjPhraseMetrics adj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "feel") 0 0
+verbPhraseMetrics (GrowAdj adj) =
+  adjPhraseMetrics adj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "grow") 0 0
+verbPhraseMetrics (GoAdj adj) =
+  adjPhraseMetrics adj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "go") 0 0
 verbPhraseMetrics (Passive verb) =
   sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
 verbPhraseMetrics (Progressive vp) =
@@ -627,6 +760,15 @@ verbPhraseMetrics (VPWithAdv vp adv) =
 verbPhraseMetrics (CoordVP _ a b) =
   verbPhraseMetrics a `plusSentenceMetrics` verbPhraseMetrics b
 
+adjPhraseMetrics ∷ AdjPhrase → SentenceMetrics
+adjPhraseMetrics (BareAdj adj) =
+  sentenceMetricsDelta 0 0 (functionWordPenalty adj) 0 0
+adjPhraseMetrics (ModifiedAdj modifier adj) =
+  adjPhraseMetrics adj
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty modifier) 0 0
+adjPhraseMetrics (CoordAdj _ a b) =
+  adjPhraseMetrics a `plusSentenceMetrics` adjPhraseMetrics b
+
 advPhraseMetrics ∷ AdvPhrase → SentenceMetrics
 advPhraseMetrics (PrepPhrase _ np) =
   nounPhraseMetrics np
@@ -637,6 +779,8 @@ advPhraseMetrics (LexicalAdv adv) =
 advPhraseMetrics (ModifiedAdv modifier adv) =
   advPhraseMetrics adv
     `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty modifier) 0 0
+advPhraseMetrics (CoordAdv _ left right) =
+  advPhraseMetrics left `plusSentenceMetrics` advPhraseMetrics right
 
 relClauseMetrics ∷ RelClause → SentenceMetrics
 relClauseMetrics (RelVP vp) =
@@ -649,8 +793,17 @@ relClauseMetrics (RelV2 verb np) =
 relClauseMetrics (NegRelV2 verb np) =
   nounPhraseMetrics np
     `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty verb) 0 0
+relClauseMetrics (RelWhoseBe noun np) =
+  nounPhraseMetrics np
+    `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty "whose" + functionWordPenalty noun + functionWordPenalty "am") 0 0
 relClauseMetrics (RelPrep _ np) =
   nounPhraseMetrics np
+relClauseMetrics (RelPrepSentence _ sentence) =
+  embeddedSentenceMetrics sentence
+relClauseMetrics (PostAdj adj) =
+  adjPhraseMetrics adj
+relClauseMetrics (RelChain left right) =
+  relClauseMetrics left `plusSentenceMetrics` relClauseMetrics right
 
 transitiveObjectAmbiguityPenalty ∷ NounPhrase → Int
 transitiveObjectAmbiguityPenalty (CommonNoun Nothing adjs noun Singular Nothing)
@@ -678,6 +831,15 @@ objectDetComparativeAdverbPenalty HowMuch (CommonNoun (Just detTxt) [] noun Sing
   | map toLower detTxt == "how much"
     && isComparativeAdverbLike (map toLower noun) = 3
 objectDetComparativeAdverbPenalty _ _ = 0
+
+comparativeRelAttachmentPenalty ∷ [String] → Maybe RelClause → Int
+comparativeRelAttachmentPenalty adjs (Just (RelVP (Intransitive _)))
+  | any (isAmbiguousComparativeModifier . map toLower) adjs = 3
+comparativeRelAttachmentPenalty _ _ = 0
+
+isAmbiguousComparativeModifier ∷ String → Bool
+isAmbiguousComparativeModifier token =
+  token `elem` ["better", "worse", "faster", "slower", "harder", "sooner", "later"]
 
 ambiguousVerbHeadPenalty ∷ String → Int
 ambiguousVerbHeadPenalty verb

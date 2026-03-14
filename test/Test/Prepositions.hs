@@ -60,6 +60,16 @@ spec grammars = describe "Prepositions / adverbs" $ do
           (Intransitive "run")
           (PrepPhrase "with" (Pronoun Third Plural Objective)))
 
+  it "parses through PP: the man has gone through the park" $ do
+    let exprs = parseControlled grammars "the man has gone through the park"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (CommonNoun (Just "the") [] "man" Singular Nothing)
+        (VPWithAdv
+          (Intransitive "go")
+          (PrepPhrase "through" (CommonNoun (Just "the") [] "park" Singular Nothing)))
+
   it "parses multiple PPs: the dog runs in the park with the woman" $ do
     let exprs = parseControlled grammars "the dog runs in the park with the woman"
     shouldParse exprs
@@ -81,3 +91,7 @@ spec grammars = describe "Prepositions / adverbs" $ do
         (VPWithAdv
           (Transitive "see" (Pronoun Third Singular Objective))
           (LexicalAdv "now"))
+
+  it "parses corpus sadness PP: one says to them bluntly with full eyes and empty glasses and in not altogether unpleasant sadness" $ do
+    let exprs = parseControlled grammars "one says to them bluntly with full eyes and empty glasses and in not altogether unpleasant sadness"
+    shouldParse exprs

@@ -72,6 +72,7 @@ pip3 install wordfreq
 python3 scripts/build_lexicon.py \
   --kaikki data/enwiktionary.jsonl.gz \
   --max 100000 \
+  --extras data/lexicon_extras.yaml \
   --yaml lexicon.yaml \
   --abs Grammar/EratoAbs.gf \
   --eng Grammar/EratoEng.gf
@@ -80,6 +81,8 @@ gf -make -path=.:~/build/gf-rgl/src:~/build/gf-rgl/src/english -output-dir=Gramm
 ```
 
 > The Kaikki file is a large JSONL dump. Keep it outside the repo and add to `.gitignore`.
+>
+> Curated lexical inclusions and manual overrides live in `data/lexicon_extras.yaml`. Prefer adding low-frequency corpus words there and regenerating instead of hand-editing the generated GF lexicon blocks. Hyphenated compounds such as `sub-sub` and `street-stall` are supported through this extras path.
 
 ---
 

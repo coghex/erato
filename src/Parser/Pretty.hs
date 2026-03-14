@@ -17,6 +17,21 @@ renderSentenceTree (Sentence t p subj vp) =
     , "\\- verb"
     , renderVP "   " vp
     ]
+renderSentenceTree (SentenceWithAdv sentence adv) =
+  unlines
+    [ "SentenceWithAdv"
+    , "|- adv: " <> show adv
+    , "\\- sentence"
+    , indentBlock "   " (renderSentenceTree sentence)
+    ]
+renderSentenceTree (Vocative sentence np) =
+  unlines
+    [ "Vocative"
+    , "|- sentence"
+    , indentBlock "   " (renderSentenceTree sentence)
+    , "\\- addressee"
+    , renderNP "   " np
+    ]
 renderSentenceTree (Question t p subj vp) =
   unlines
     [ "Question"
@@ -59,6 +74,12 @@ renderNP indent np =
         [ indent <> "|- ProperNoun"
         , indent <> "\\- " <> name
         ]
+    Demonstrative form num ->
+      unlines
+        [ indent <> "|- Demonstrative"
+        , indent <> "|- form: " <> form
+        , indent <> "\\- number: " <> show num
+        ]
     Pronoun p n c ->
       unlines
         [ indent <> "|- Pronoun"
@@ -73,7 +94,8 @@ renderNP indent np =
         , renderNP (indent <> "   ") owner
         , indent <> "|- adjs: " <> show adjs
         , indent <> "|- number: " <> show num
-        , indent <> "|- rel: " <> show rel
+        , indent <> "|- rel"
+        , renderRelClauseMaybe (indent <> "   ") rel
         , indent <> "\\- noun: " <> noun
         ]
     CommonNoun det adjs noun num rel ->
@@ -82,7 +104,8 @@ renderNP indent np =
         , indent <> "|- det: " <> show det
         , indent <> "|- adjs: " <> show adjs
         , indent <> "|- number: " <> show num
-        , indent <> "|- rel: " <> show rel
+        , indent <> "|- rel"
+        , renderRelClauseMaybe (indent <> "   ") rel
         , indent <> "\\- noun: " <> noun
         ]
     CoordNP c a b ->
@@ -130,10 +153,59 @@ renderVP indent vp =
         , indent <> "\\- clause"
         , indentBlock (indent <> "   ") (renderSentenceTree sentence)
         ]
+    PassiveVSComplement v sentence ->
+      unlines
+        [ indent <> "|- PassiveVSComplement"
+        , indent <> "|- verb: " <> v
+        , indent <> "\\- clause"
+        , indentBlock (indent <> "   ") (renderSentenceTree sentence)
+        ]
     Copula adj ->
       unlines
         [ indent <> "|- Copula"
-        , indent <> "\\- " <> adj
+        , renderAdjPhrase (indent <> "   ") adj
+        ]
+    CopulaNP np ->
+      unlines
+        [ indent <> "|- CopulaNP"
+        , indent <> "\\- complement"
+        , renderNP (indent <> "   ") np
+        ]
+    CopulaAdv adv ->
+      unlines
+        [ indent <> "|- CopulaAdv"
+        , indent <> "\\- adv: " <> show adv
+        ]
+    SeemAdj adj ->
+      unlines
+        [ indent <> "|- SeemAdj"
+        , renderAdjPhrase (indent <> "   ") adj
+        ]
+    SeemNP np ->
+      unlines
+        [ indent <> "|- SeemNP"
+        , indent <> "\\- complement"
+        , renderNP (indent <> "   ") np
+        ]
+    SeemAdv adv ->
+      unlines
+        [ indent <> "|- SeemAdv"
+        , indent <> "\\- adv: " <> show adv
+        ]
+    FeelAdj adj ->
+      unlines
+        [ indent <> "|- FeelAdj"
+        , renderAdjPhrase (indent <> "   ") adj
+        ]
+    GrowAdj adj ->
+      unlines
+        [ indent <> "|- GrowAdj"
+        , renderAdjPhrase (indent <> "   ") adj
+        ]
+    GoAdj adj ->
+      unlines
+        [ indent <> "|- GoAdj"
+        , renderAdjPhrase (indent <> "   ") adj
         ]
     Passive v ->
       unlines
@@ -161,6 +233,90 @@ renderVP indent vp =
         [ indent <> "|- CoordVP (" <> show c <> ")"
         , renderVP (indent <> "   ") a
         , renderVP (indent <> "   ") b
+        ]
+
+renderAdjPhrase ∷ String → AdjPhrase → String
+renderAdjPhrase indent adjPhrase =
+  case adjPhrase of
+    BareAdj adj ->
+      indent <> "\\- " <> adj <> "\n"
+    ModifiedAdj modifier base ->
+      unlines
+        [ indent <> "|- ModifiedAdj"
+        , indent <> "|- modifier: " <> modifier
+        , renderAdjPhrase (indent <> "   ") base
+        ]
+    CoordAdj c a b ->
+      unlines
+        [ indent <> "|- CoordAdj (" <> show c <> ")"
+        , renderAdjPhrase (indent <> "   ") a
+        , renderAdjPhrase (indent <> "   ") b
+        ]
+
+renderRelClauseMaybe ∷ String → Maybe RelClause → String
+renderRelClauseMaybe indent Nothing =
+  indent <> "\\- Nothing\n"
+renderRelClauseMaybe indent (Just relClause) =
+  renderRelClauseTree indent relClause
+
+renderRelClauseTree ∷ String → RelClause → String
+renderRelClauseTree indent relClause =
+  case relClause of
+    RelVP vp ->
+      unlines
+        [ indent <> "|- RelVP"
+        , renderVP (indent <> "   ") vp
+        ]
+    NegRelVP vp ->
+      unlines
+        [ indent <> "|- NegRelVP"
+        , renderVP (indent <> "   ") vp
+        ]
+    RelV2 verb np ->
+      unlines
+        [ indent <> "|- RelV2"
+        , indent <> "|- verb: " <> verb
+        , indent <> "\\- object"
+        , renderNP (indent <> "   ") np
+        ]
+    NegRelV2 verb np ->
+      unlines
+        [ indent <> "|- NegRelV2"
+        , indent <> "|- verb: " <> verb
+        , indent <> "\\- object"
+        , renderNP (indent <> "   ") np
+        ]
+    RelWhoseBe noun np ->
+      unlines
+        [ indent <> "|- RelWhoseBe"
+        , indent <> "|- noun: " <> noun
+        , indent <> "\\- subject"
+        , renderNP (indent <> "   ") np
+        ]
+    RelPrep prep np ->
+      unlines
+        [ indent <> "|- RelPrep"
+        , indent <> "|- prep: " <> prep
+        , indent <> "\\- object"
+        , renderNP (indent <> "   ") np
+        ]
+    RelPrepSentence prep sentence ->
+      unlines
+        [ indent <> "|- RelPrepSentence"
+        , indent <> "|- prep: " <> prep
+        , indent <> "\\- clause"
+        , indentBlock (indent <> "   ") (renderSentenceTree sentence)
+        ]
+    PostAdj adj ->
+      unlines
+        [ indent <> "|- PostAdj"
+        , renderAdjPhrase (indent <> "   ") adj
+        ]
+    RelChain left right ->
+      unlines
+        [ indent <> "|- RelChain"
+        , renderRelClauseTree (indent <> "   ") left
+        , renderRelClauseTree (indent <> "   ") right
         ]
 
 renderWhClause ∷ String → WhClause → String

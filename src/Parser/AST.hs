@@ -7,6 +7,7 @@ module Parser.AST
   , Number(..)
   , PronounCase(..)
   , QuestionWord(..)
+  , AdjPhrase(..)
   , NounPhrase(..)
   , VerbPhrase(..)
   , AdvPhrase(..)
@@ -16,7 +17,7 @@ module Parser.AST
   , Conj(..)
   ) where
 
-data Tense = Present | Past | Future | Perfect
+data Tense = Present | Past | Future | Conditional | Perfect
   deriving (Eq, Show)
 
 data Polarity = Positive | Negative
@@ -37,8 +38,15 @@ data QuestionWord = Who | What | Where | When | Why | How | Which | HowMany | Ho
 data Conj = And | Or
   deriving (Eq, Show)
 
+data AdjPhrase
+  = BareAdj String
+  | ModifiedAdj String AdjPhrase
+  | CoordAdj Conj AdjPhrase AdjPhrase
+  deriving (Eq, Show)
+
 data NounPhrase
   = ProperNoun String
+  | Demonstrative String Number
   | Pronoun
       { person      ∷ Person
       , number      ∷ Number
@@ -60,7 +68,11 @@ data RelClause
   | NegRelVP VerbPhrase
   | RelV2 String NounPhrase
   | NegRelV2 String NounPhrase
+  | RelWhoseBe String NounPhrase
   | RelPrep String NounPhrase
+  | RelPrepSentence String Sentence
+  | PostAdj AdjPhrase
+  | RelChain RelClause RelClause
   deriving (Eq, Show)
 
 data AdvPhrase
@@ -68,6 +80,7 @@ data AdvPhrase
   | ClausePhrase String Sentence
   | LexicalAdv String
   | ModifiedAdv String AdvPhrase
+  | CoordAdv Conj AdvPhrase AdvPhrase
   deriving (Eq, Show)
 
 data VerbPhrase
@@ -76,7 +89,16 @@ data VerbPhrase
   | VVComplement String VerbPhrase
   | V2VComplement String NounPhrase VerbPhrase
   | VSComplement String Sentence
-  | Copula String
+  | PassiveVSComplement String Sentence
+  | Copula AdjPhrase
+  | CopulaNP NounPhrase
+  | CopulaAdv AdvPhrase
+  | SeemAdj AdjPhrase
+  | SeemNP NounPhrase
+  | SeemAdv AdvPhrase
+  | FeelAdj AdjPhrase
+  | GrowAdj AdjPhrase
+  | GoAdj AdjPhrase
   | Passive String
   | Progressive VerbPhrase
   | Perfective VerbPhrase
@@ -99,6 +121,8 @@ data Sentence
     , subject  ∷ NounPhrase
     , verb     ∷ VerbPhrase
     }
+  | SentenceWithAdv Sentence AdvPhrase
+  | Vocative Sentence NounPhrase
   | Question Tense Polarity NounPhrase VerbPhrase
   | WhQuestion Tense Polarity WhClause
   | Existential Tense Polarity NounPhrase

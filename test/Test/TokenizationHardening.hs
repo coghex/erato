@@ -40,7 +40,7 @@ spec grammars = describe "Tokenization hardening" $ do
     exprs `shouldParseAs`
       Sentence Present Positive
         (Pronoun Third Singular Subjective)
-        (Copula "big")
+        (Copula (BareAdj "big"))
 
   it "parses comma-separated subordinate clause: the dog runs, because the cat runs." $ do
     let exprs = parseControlled grammars "the dog runs, because the cat runs."
@@ -54,3 +54,27 @@ spec grammars = describe "Tokenization hardening" $ do
             (Sentence Present Positive
               (CommonNoun (Just "the") [] "cat" Singular Nothing)
               (Intransitive "run"))))
+
+  it "parses capitalized hyphenated common noun: it is a Sub-Sub." $ do
+    let exprs = parseControlled grammars "it is a Sub-Sub."
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Third Singular Subjective)
+        (CopulaNP (CommonNoun (Just "a") [] "sub-sub" Singular Nothing))
+
+  it "parses hyphenated plural common noun: the street-stalls are big." $ do
+    let exprs = parseControlled grammars "the street-stalls are big."
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "street-stall" Plural Nothing)
+        (Copula (BareAdj "big"))
+
+  it "parses mid-sentence capitalized common noun: the Vaticans are big." $ do
+    let exprs = parseControlled grammars "the Vaticans are big."
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "vatican" Plural Nothing)
+        (Copula (BareAdj "big"))

@@ -90,6 +90,14 @@ spec grammars = describe "Pronouns" $ do
         (Pronoun Second Plural Subjective)
         (Intransitive "run")
 
+  it "parses archaic plural-you subject: ye run" $ do
+    let exprs = parseControlled grammars "ye run"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Second Plural Subjective)
+        (Intransitive "run")
+
   it "parses pronoun object: the dog eats me" $ do
     let exprs = parseControlled grammars "the dog eats me"
     shouldParse exprs

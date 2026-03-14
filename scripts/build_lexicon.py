@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse, gzip, json, re
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 from wordfreq import zipf_frequency
 
-LEMMA_RE = re.compile(r"^[a-z]+$")
+TOKEN_RE = re.compile(r"^[a-z]+(?:-[a-z]+)*$")
+GF_HYPHEN_MARKER = "_H_"
 
 STOPLIST = {
     "i","me","you","he","him","she","her","it","we","us","they","them",
@@ -55,8 +57,22 @@ class LemmaInfo:
     verb: VerbInfo | None = None
     adj: bool = False
 
+def normalize_form(form: str | None) -> str | None:
+    if form is None:
+        return None
+    form = form.strip()
+    if not form:
+        return None
+    if not form.islower():
+        raise ValueError(f"manual form must be lowercase: {form!r}")
+    if not is_single_token(form):
+        raise ValueError(f"manual form must be a single token: {form!r}")
+    if not TOKEN_RE.match(form):
+        raise ValueError(f"manual form must match {TOKEN_RE.pattern}: {form!r}")
+    return form
+
 def is_single_token(lemma: str) -> bool:
-    return " " not in lemma and "-" not in lemma and "_" not in lemma
+    return " " not in lemma and "_" not in lemma
 
 def normalize_lemma(lemma: str) -> str | None:
     lemma = lemma.strip()
@@ -66,11 +82,14 @@ def normalize_lemma(lemma: str) -> str | None:
         return None
     if not is_single_token(lemma):
         return None
-    if not LEMMA_RE.match(lemma):
+    if not TOKEN_RE.match(lemma):
         return None
     if lemma in BLOCKED_LEMMAS:
         return None
     return lemma
+
+def gf_lexeme_name(lemma: str) -> str:
+    return lemma.replace("-", GF_HYPHEN_MARKER)
 
 def iter_jsonl(path):
     opener = gzip.open if path.endswith(".gz") else open
@@ -124,15 +143,92 @@ def detect_transitive(entry):
             return True
     return False
 
+def empty_extras():
+    return {
+        "include_lemmas": [],
+        "nouns": [],
+        "verbs": [],
+        "adjectives": [],
+    }
+
+def load_extras(path: str | None):
+    extras = empty_extras()
+    if not path:
+        return extras
+
+    extras_path = Path(path)
+    if not extras_path.exists():
+        return extras
+
+    with extras_path.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    for lemma in raw.get("include_lemmas", []):
+        normalized = normalize_lemma(str(lemma))
+        if normalized is None:
+            raise ValueError(f"invalid include_lemmas entry: {lemma!r}")
+        extras["include_lemmas"].append(normalized)
+
+    for entry in raw.get("nouns", []):
+        if isinstance(entry, str):
+            entry = {"lemma": entry}
+        lemma = normalize_lemma(str(entry.get("lemma", "")))
+        if lemma is None:
+            raise ValueError(f"invalid manual noun lemma: {entry!r}")
+        extras["nouns"].append({
+            "lemma": lemma,
+            "plural": normalize_form(entry.get("plural")),
+        })
+
+    for entry in raw.get("verbs", []):
+        if isinstance(entry, str):
+            entry = {"lemma": entry}
+        lemma = normalize_lemma(str(entry.get("lemma", "")))
+        if lemma is None:
+            raise ValueError(f"invalid manual verb lemma: {entry!r}")
+        extras["verbs"].append({
+            "lemma": lemma,
+            "third_singular": normalize_form(entry.get("third_singular")),
+            "past": normalize_form(entry.get("past")),
+            "past_participle": normalize_form(entry.get("past_participle")),
+            "present_participle": normalize_form(entry.get("present_participle")),
+            "transitive": bool(entry.get("transitive", False)),
+        })
+
+    for entry in raw.get("adjectives", []):
+        lemma = entry["lemma"] if isinstance(entry, dict) else entry
+        normalized = normalize_lemma(str(lemma))
+        if normalized is None:
+            raise ValueError(f"invalid manual adjective lemma: {entry!r}")
+        extras["adjectives"].append(normalized)
+
+    extras["include_lemmas"] = list(dict.fromkeys(extras["include_lemmas"]))
+    extras["adjectives"] = list(dict.fromkeys(extras["adjectives"]))
+    return extras
+
+def merge_overrides(base_items, extra_items, key):
+    merged = list(base_items)
+    index_by_key = {item[key]: idx for idx, item in enumerate(merged)}
+    for item in extra_items:
+        item_key = item[key]
+        if item_key in index_by_key:
+            merged[index_by_key[item_key]] = item
+        else:
+            index_by_key[item_key] = len(merged)
+            merged.append(item)
+    return merged
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kaikki", required=True)
     ap.add_argument("--max", type=int, default=100000)
+    ap.add_argument("--extras", default="data/lexicon_extras.yaml")
     ap.add_argument("--yaml", default="lexicon.yaml")
     ap.add_argument("--abs", default="Grammar/EratoAbs.gf")
     ap.add_argument("--eng", default="Grammar/EratoEng.gf")
     args = ap.parse_args()
 
+    extras = load_extras(args.extras)
     lemmas = {}
 
     for entry in iter_jsonl(args.kaikki):
@@ -183,7 +279,14 @@ def main():
         key=lambda kv: zipf_frequency(kv[0], "en"),
         reverse=True
     )
-    ranked = ranked[: args.max]
+    selected_lemmas = {lemma for lemma, _ in ranked[: args.max]}
+    missing_include_lemmas = []
+    for lemma in extras["include_lemmas"]:
+        if lemma in lemmas:
+            selected_lemmas.add(lemma)
+        else:
+            missing_include_lemmas.append(lemma)
+    ranked = [(lemma, info) for lemma, info in ranked if lemma in selected_lemmas]
 
     nouns = []
     verbs = []
@@ -228,6 +331,10 @@ def main():
     verbs = dedup(verbs, "lemma")
     adjs = list(dict.fromkeys(adjs))
 
+    nouns = merge_overrides(nouns, extras["nouns"], "lemma")
+    verbs = merge_overrides(verbs, extras["verbs"], "lemma")
+    adjs = list(dict.fromkeys(adjs + extras["adjectives"]))
+
     data = {"nouns": nouns, "verbs": verbs, "adjectives": adjs}
 
     with open(args.yaml, "w", encoding="utf-8") as f:
@@ -235,6 +342,10 @@ def main():
 
     generate_gf(data, args.abs, args.eng)
 
+    if args.extras and Path(args.extras).exists():
+        print(f"[ok] loaded extras from {args.extras}")
+    if missing_include_lemmas:
+        print("[warn] include_lemmas missing from Kaikki: " + ", ".join(missing_include_lemmas))
     print(f"[ok] wrote {args.yaml}")
     print(f"[ok] updated {args.abs} and {args.eng}")
 
@@ -246,12 +357,12 @@ def generate_gf(data, abs_path, eng_path):
 
     funs = []
     for n in data["nouns"]:
-        base = n["lemma"]
+        base = gf_lexeme_name(n["lemma"])
         funs.append(f"    {base}_N    : N ;")
         if n["plural"]:
             funs.append(f"    {base}Pl_N  : N ;")
     for v in data["verbs"]:
-        base = v["lemma"]
+        base = gf_lexeme_name(v["lemma"])
         funs.append(f"    {base}_V    : V ;")
         if v["third_singular"]:
             funs.append(f"    {base}S_V   : V ;")
@@ -260,6 +371,7 @@ def generate_gf(data, abs_path, eng_path):
             if v["third_singular"]:
                 funs.append(f"    {base}S_V2  : V2 ;")
     for a in data["adjectives"]:
+        a = gf_lexeme_name(a)
         funs.append(f"    {a}_A    : A ;")
 
     with open(abs_path, "r", encoding="utf-8") as f:
@@ -275,12 +387,13 @@ def generate_gf(data, abs_path, eng_path):
 
     lins = []
     for n in data["nouns"]:
-        base = n["lemma"]
+        lemma = n["lemma"]
+        base = gf_lexeme_name(lemma)
         lins.append(
             f"""    {base}_N  = lin CN {{
       s = table {{
-        ParamX.Sg => table {{ResEng.Nom => "{base}" ; ResEng.Gen => "{base}"}} ;
-        ParamX.Pl => table {{ResEng.Nom => "{base}" ; ResEng.Gen => "{base}"}}
+        ParamX.Sg => table {{ResEng.Nom => "{lemma}" ; ResEng.Gen => "{lemma}"}} ;
+        ParamX.Pl => table {{ResEng.Nom => "{lemma}" ; ResEng.Gen => "{lemma}"}}
       }} ;
       g = ResEng.Neutr ;
       lock_CN = {{}}
@@ -301,22 +414,24 @@ def generate_gf(data, abs_path, eng_path):
 """
             )
     for v in data["verbs"]:
-        base = v["lemma"]
-        past = v["past"] or (base + "ed")
+        lemma = v["lemma"]
+        base = gf_lexeme_name(lemma)
+        past = v["past"] or (lemma + "ed")
         pp = v["past_participle"] or past
-        prp = v["present_participle"] or (base + "ing")
+        prp = v["present_participle"] or (lemma + "ing")
 
-        lins.append(f'    {base}_V  = mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}" ;')
+        lins.append(f'    {base}_V  = mk5V "{lemma}" "{lemma}" "{past}" "{pp}" "{prp}" ;')
         if v["third_singular"]:
             lins.append(f'    {base}S_V = mk5V "{v["third_singular"]}" "{v["third_singular"]}" "{past}" "{pp}" "{prp}" ;')
 
         if v["transitive"]:
-            lins.append(f'    {base}_V2  = dirV2 (mk5V "{base}" "{base}" "{past}" "{pp}" "{prp}") ;')
+            lins.append(f'    {base}_V2  = dirV2 (mk5V "{lemma}" "{lemma}" "{past}" "{pp}" "{prp}") ;')
             if v["third_singular"]:
                 lins.append(f'    {base}S_V2 = dirV2 (mk5V "{v["third_singular"]}" "{v["third_singular"]}" "{past}" "{pp}" "{prp}") ;')
 
     for a in data["adjectives"]:
-        lins.append(f'    {a}_A  = mkA "{a}" ;')
+        base = gf_lexeme_name(a)
+        lins.append(f'    {base}_A  = mkA "{a}" ;')
 
     with open(eng_path, "r", encoding="utf-8") as f:
         eng_text = f.read()

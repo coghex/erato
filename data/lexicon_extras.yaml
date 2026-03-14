@@ -1,0 +1,40 @@
+include_lemmas:
+  - burrower
+  - grub-worm
+  - street-stall
+  - sub-sub
+  - vatican
+
+nouns:
+  - lemma: burrower
+    plural: burrowers
+  - lemma: grub-worm
+    plural: grub-worms
+  - lemma: street-stall
+    plural: street-stalls
+  - lemma: sub-sub
+    plural: sub-subs
+  - lemma: vatican
+    plural: vaticans
+  - lemma: cetology
+    plural: cetologies
+
+verbs:
+  - lemma: fare
+    third_singular: fares
+    past: fared
+    past_participle: fared
+    present_participle: faring
+    transitive: true
+  - lemma: please
+    third_singular: pleases
+    past: pleased
+    past_participle: pleased
+    present_participle: pleasing
+    transitive: true
+
+adjectives:
+  - higgledy-piggledy
+  - gospel
+  - rosy-strong
+  - poor-devilish

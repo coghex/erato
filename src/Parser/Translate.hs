@@ -10,6 +10,7 @@ module Parser.Translate
 
 import Control.Applicative ((<|>))
 import Data.Char (isAlpha, isSpace, toLower)
+import Data.List (isPrefixOf)
 import PGF hiding (Token)
 import Parser.AST
 
@@ -64,6 +65,18 @@ data SExp
 data VerbForm = BaseForm | ThirdSingular
   deriving (Eq, Show)
 
+gfHyphenMarker ∷ String
+gfHyphenMarker = "_H_"
+
+decodeLexemeStem ∷ String → String
+decodeLexemeStem [] = []
+decodeLexemeStem stem
+  | gfHyphenMarker `isPrefixOf` stem =
+      '-' : decodeLexemeStem (drop (length gfHyphenMarker) stem)
+  | otherwise =
+      let c : rest = stem
+      in c : decodeLexemeStem rest
+
 data ParsedQuestion
   = ParsedPolarQuestion NounPhrase VerbPhrase
   | ParsedWhQuestion WhClause
@@ -74,14 +87,57 @@ parseSentence (List [Atom "UttS", s]) =
   parseSentence s
 parseSentence (List [Atom "UttQS", qs]) =
   parseQuestion qs
+parseSentence (List [Atom "UttImp", p, List [Atom "FareTheeWellVocImp", np]]) = do
+  polarity' <- parsePolarity p
+  addressee <- parseNP Subjective np
+  let verbPhrase =
+        VPWithAdv
+          (Transitive "fare" (Pronoun Second Singular Objective))
+          (LexicalAdv "well")
+  pure (Vocative (Imperative polarity' verbPhrase) addressee)
+parseSentence (List [Atom "UttImp", p, List [Atom "AdvFareTheeWellVocImp", adv, np]]) = do
+  polarity' <- parsePolarity p
+  advPhrase <- parseAdv adv
+  addressee <- parseNP Subjective np
+  let verbPhrase =
+        VPWithAdv
+          (VPWithAdv
+            (Transitive "fare" (Pronoun Second Singular Objective))
+            (LexicalAdv "well"))
+          advPhrase
+  pure (Vocative (Imperative polarity' verbPhrase) addressee)
+parseSentence (List [Atom "UttImp", p, List [Atom "VocNPImp", vp, np]]) = do
+  polarity' <- parsePolarity p
+  (verbPhrase, _) <- parseVP vp
+  addressee <- parseNP Subjective np
+  pure (Vocative (Imperative polarity' verbPhrase) addressee)
 parseSentence (List [Atom "UttImp", p, imp]) = do
   polarity' <- parsePolarity p
   (vp, _) <- parseImp imp
   pure (Imperative polarity' vp)
+parseSentence (List [Atom "VocativeUtt", utt, np]) = do
+  sentence <- parseSentence utt
+  addressee <- parseNP Subjective np
+  pure (Vocative sentence addressee)
 parseSentence (List [Atom "MkS", t, p, cl]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
   parseClAsSentence tense' polarity' cl
+parseSentence (List [Atom "FrontAdvS", adv, s]) = do
+  adv' <- parseAdv adv
+  sentence <- parseSentence s
+  pure (SentenceWithAdv sentence adv')
+parseSentence (List [Atom "WouldThatS", s]) = do
+  sentence <- parseSentence s
+  pure (SentenceWithAdv sentence (LexicalAdv "would that"))
+parseSentence (List [Atom "ByHowMuchSoMuchS", s1, s2]) = do
+  _ <- parseSentence s1
+  secondSentence <- parseSentence s2
+  let byHowMuch =
+        PrepPhrase "by" (CommonNoun Nothing ["much"] "how" Singular Nothing)
+      bySoMuch =
+        PrepPhrase "by" (CommonNoun Nothing ["much"] "so" Singular Nothing)
+  pure (SentenceWithAdv (SentenceWithAdv secondSentence bySoMuch) byHowMuch)
 parseSentence (List [Atom "MkSCoord", t, p, np, conj, vp1, vp2]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
@@ -178,12 +234,18 @@ parseClAsSentence tense' polarity' cl = do
 
 parseImp ∷ SExp → Maybe (VerbPhrase, VerbForm)
 parseImp (List [Atom "MkImp", vp]) = parseVP vp
+parseImp (List [Atom "CoordImp", conj, vp1, vp2]) = do
+  c <- parseConj conj
+  (left, _) <- parseVP vp1
+  (right, _) <- parseVP vp2
+  pure (CoordVP c left right, BaseForm)
 parseImp _ = Nothing
 
 parseTense ∷ SExp → Maybe Tense
 parseTense (Atom "TPres") = Just Present
 parseTense (Atom "TPast") = Just Past
 parseTense (Atom "TFut")  = Just Future
+parseTense (Atom "TCond") = Just Conditional
 parseTense (Atom "TPerf") = Just Perfect
 parseTense _              = Nothing
 
@@ -205,22 +267,31 @@ parseN (List [Atom "AdjCN", a, n]) = do
   adj <- parseA a
   (num, adjs, noun, rel) <- parseN n
   pure (num, adj : adjs, noun, rel)
+parseN (List [Atom "AdjPCN", ap, n]) = do
+  (num, adjs, noun, rel) <- parseN n
+  case parsePostpositiveAP ap of
+    Just adj ->
+      pure (num, adjs, noun, addRelClause rel (PostAdj adj))
+    Nothing -> do
+      adjTokens <- flattenPrenominalAP =<< parseAP ap
+      pure (num, adjTokens ++ adjs, noun, rel)
 parseN (List [Atom "PrepCN", n, prep, np]) = do
   (num, adjs, noun, rel) <- parseN n
   prepTxt <- parsePrep prep
   obj <- parseNP Objective np
-  case rel of
-    Nothing -> pure (num, adjs, noun, Just (RelPrep prepTxt obj))
-    Just _  -> Nothing
+  pure (num, adjs, noun, addRelClause rel (RelPrep prepTxt obj))
+parseN (List [Atom "PrepQSCN", n, prep, qs]) = do
+  (num, adjs, noun, rel) <- parseN n
+  prepTxt <- parsePrep prep
+  clause <- parseQuestion qs
+  pure (num, adjs, noun, addRelClause rel (RelPrepSentence prepTxt clause))
 parseN (List [Atom "RelCN", n, rc]) = do
   (num, adjs, noun, rel) <- parseN n
   rc' <- parseRelClause rc
-  case rel of
-    Nothing -> pure (num, adjs, noun, Just rc')
-    Just _  -> Nothing
+  pure (num, adjs, noun, addRelClause rel rc')
 parseN (Atom a)
-  | Just base <- stripSuffix "Pl_N" a = Just (Plural, [], base, Nothing)
-  | Just base <- stripSuffix "_N" a   = Just (Singular, [], base, Nothing)
+  | Just base <- stripSuffix "Pl_N" a = Just (Plural, [], decodeLexemeStem base, Nothing)
+  | Just base <- stripSuffix "_N" a   = Just (Singular, [], decodeLexemeStem base, Nothing)
 parseN _ = Nothing
 
 parseRelClause ∷ SExp → Maybe RelClause
@@ -237,11 +308,33 @@ parseRelClause (List [Atom "RelV2", rp, np, v2]) = do
   subj <- parseNP Subjective np
   (lemma, _) <- parseV2 v2
   pure (RelV2 lemma subj)
+parseRelClause (List [Atom "RelFutureAdVV2", rp, np, _, v2]) = do
+  _ <- parseRP rp
+  subj <- parseNP Subjective np
+  (lemma, _) <- parseV2 v2
+  pure (RelV2 lemma subj)
 parseRelClause (List [Atom "NegRelV2", rp, np, v2]) = do
   _ <- parseRP rp
   subj <- parseNP Subjective np
   (lemma, _) <- parseV2 v2
   pure (NegRelV2 lemma subj)
+parseRelClause (List [Atom "RelWhoseBe", n, np]) = do
+  (_, _, noun, _) <- parseN n
+  subj <- parseNP Subjective np
+  pure (RelWhoseBe noun subj)
+parseRelClause (List [Atom "RelPrepWhomS", prep, s]) = do
+  prepTxt <- parsePrep prep
+  sentence <- parseSentence s
+  whSentence <- sentenceToWhomPrepQuestion sentence
+  pure (RelPrepSentence prepTxt whSentence)
+parseRelClause (List [Atom "AndRC", rc1, rc2]) = do
+  left <- parseRelClause rc1
+  right <- parseRelClause rc2
+  pure (RelChain left right)
+parseRelClause (List [Atom "ButRC", rc1, rc2]) = do
+  left <- parseRelClause rc1
+  right <- parseRelClause rc2
+  pure (RelChain left right)
 parseRelClause _ = Nothing
 
 parseAdv ∷ SExp → Maybe AdvPhrase
@@ -259,11 +352,25 @@ parseAdv (List [Atom "ModAdv", ada, adv]) = do
   modifier <- parseAdA ada
   base <- parseAdv adv
   pure (ModifiedAdv modifier base)
+parseAdv (List [Atom "AndAdv", adv1, adv2]) = do
+  left <- parseAdv adv1
+  right <- parseAdv adv2
+  pure (CoordAdv And left right)
+parseAdv (Atom "atLeast_Adv") =
+  Just (LexicalAdv "at least")
 parseAdv (Atom a)
   | Just base <- stripSuffix "_Adv" a = Just (LexicalAdv base)
 parseAdv _ = Nothing
 
+parseAdV ∷ SExp → Maybe AdvPhrase
+parseAdV (Atom a)
+  | Just base <- stripSuffix "_AdV" a = Just (LexicalAdv base)
+parseAdV _ = Nothing
+
 parsePrep ∷ SExp → Maybe String
+parsePrep (Atom "asAffording_Prep") = Just "as affording"
+parsePrep (Atom "asWellAs_Prep") = Just "as well as"
+parsePrep (Atom "asTouching_Prep") = Just "as touching"
 parsePrep (Atom a)
   | Just base <- stripSuffix "_Prep" a = Just base
 parsePrep _ = Nothing
@@ -277,6 +384,7 @@ parseSubj _                     = Nothing
 
 parseRP ∷ SExp → Maybe ()
 parseRP (Atom "who_RP")  = Just ()
+parseRP (Atom "which_RP") = Just ()
 parseRP (Atom "that_RP") = Just ()
 parseRP _ = Nothing
 
@@ -284,6 +392,11 @@ parseQuestionIP ∷ SExp → Maybe QuestionWord
 parseQuestionIP (Atom "who_IP")  = Just Who
 parseQuestionIP (Atom "what_IP") = Just What
 parseQuestionIP _ = Nothing
+
+sentenceToWhomPrepQuestion ∷ Sentence → Maybe Sentence
+sentenceToWhomPrepQuestion (Sentence tense polarity subj vp) =
+  Just (WhQuestion tense polarity (AdvWh Who subj vp))
+sentenceToWhomPrepQuestion _ = Nothing
 
 parseQuestionIAdv ∷ SExp → Maybe (QuestionWord, [AdvPhrase])
 parseQuestionIAdv (Atom "where_IAdv") = Just (Where, [])
@@ -357,42 +470,107 @@ parseDetInfo _                  = Nothing
 
 parseV ∷ SExp → Maybe (String, VerbForm)
 parseV (Atom a)
-  | Just base <- stripSuffix "S_V" a  = Just (base, ThirdSingular)
-  | Just base <- stripSuffix "_V" a   = Just (base, BaseForm)
+  | Just base <- stripSuffix "S_V" a  = Just (decodeLexemeStem base, ThirdSingular)
+  | Just base <- stripSuffix "_V" a   = Just (decodeLexemeStem base, BaseForm)
 parseV _ = Nothing
 
 parseV2 ∷ SExp → Maybe (String, VerbForm)
 parseV2 (Atom a)
-  | Just base <- stripSuffix "S_V2" a = Just (base, ThirdSingular)
-  | Just base <- stripSuffix "_V2" a  = Just (base, BaseForm)
+  | Just base <- stripSuffix "S_V2" a
+  , decodeLexemeStem base == "gulp-down" = Just ("gulp down", ThirdSingular)
+  | Just base <- stripSuffix "_V2" a
+  , decodeLexemeStem base == "gulp-down" = Just ("gulp down", BaseForm)
+  | Just base <- stripSuffix "S_V2" a
+  , decodeLexemeStem base == "clear-out" = Just ("clear out", ThirdSingular)
+  | Just base <- stripSuffix "_V2" a
+  , decodeLexemeStem base == "clear-out" = Just ("clear out", BaseForm)
+  | Just base <- stripSuffix "S_V2" a = Just (decodeLexemeStem base, ThirdSingular)
+  | Just base <- stripSuffix "_V2" a  = Just (decodeLexemeStem base, BaseForm)
 parseV2 _ = Nothing
 
 parseVV ∷ SExp → Maybe String
 parseVV (Atom a)
-  | Just base <- stripSuffix "_VV" a = Just base
+  | Just base <- stripSuffix "_VV" a = Just (decodeLexemeStem base)
 parseVV _ = Nothing
 
 parseV2V ∷ SExp → Maybe String
 parseV2V (Atom a)
-  | Just base <- stripSuffix "_V2V" a = Just base
+  | Just base <- stripSuffix "_V2V" a = Just (decodeLexemeStem base)
 parseV2V _ = Nothing
 
 parseVS ∷ SExp → Maybe String
 parseVS (Atom a)
-  | Just base <- stripSuffix "_VS" a = Just base
+  | Just base <- stripSuffix "_VS" a = Just (decodeLexemeStem base)
 parseVS _ = Nothing
 
 parseA ∷ SExp → Maybe String
 parseA (Atom a)
-  | Just base <- stripSuffix "_A" a = Just base
+  | Just base <- stripSuffix "_A" a = Just (decodeLexemeStem base)
 parseA _ = Nothing
+
+parseAP ∷ SExp → Maybe AdjPhrase
+parseAP (List [Atom "PositA", a]) =
+  BareAdj <$> parseA a
+parseAP (List [Atom "PostPositA", a]) =
+  BareAdj <$> parseA a
+parseAP (List [Atom "ModAP", ada, ap]) = do
+  modifier <- parseAdA ada
+  base <- parseAP ap
+  pure (ModifiedAdj modifier base)
+parseAP (List [Atom "ConjAP", conj, ap1, ap2]) = do
+  c <- parseConj conj
+  left <- parseAP ap1
+  right <- parseAP ap2
+  pure (CoordAdj c left right)
+parseAP expr =
+  BareAdj <$> parseA expr
+
+parsePostpositiveAP ∷ SExp → Maybe AdjPhrase
+parsePostpositiveAP (List [Atom "PostPositA", a]) = do
+  adj <- parseA a
+  if isAllowedPostpositiveAdj adj
+    then pure (BareAdj adj)
+    else Nothing
+parsePostpositiveAP (List [Atom "ModAP", ada, ap]) = do
+  modifier <- parseAdA ada
+  base <- parsePostpositiveAP ap
+  pure (ModifiedAdj modifier base)
+parsePostpositiveAP (List [Atom "ConjAP", conj, ap1, ap2]) = do
+  c <- parseConj conj
+  left <- parsePostpositiveAP ap1
+  right <- parsePostpositiveAP ap2
+  pure (CoordAdj c left right)
+parsePostpositiveAP _ = Nothing
+
+flattenPrenominalAP ∷ AdjPhrase → Maybe [String]
+flattenPrenominalAP (BareAdj adj) = Just [adj]
+flattenPrenominalAP (ModifiedAdj modifier base) =
+  (modifier :) <$> flattenPrenominalAP base
+flattenPrenominalAP (CoordAdj And left right) =
+  (++) <$> flattenPrenominalAP left <*> flattenPrenominalAP right
+flattenPrenominalAP (CoordAdj Or left right) = do
+  leftTokens <- flattenPrenominalAP left
+  rightTokens <- flattenPrenominalAP right
+  pure (leftTokens ++ ["or"] ++ rightTokens)
+
+isAllowedPostpositiveAdj ∷ String → Bool
+isAllowedPostpositiveAdj adj =
+  map toLower adj `elem` ["whatsoever", "sacred", "profane", "authentic"]
+
+addRelClause ∷ Maybe RelClause → RelClause → Maybe RelClause
+addRelClause Nothing newRel = Just newRel
+addRelClause (Just rel) newRel = Just (RelChain rel newRel)
 
 parseAdA ∷ SExp → Maybe String
 parseAdA (Atom "much_AdA") = Just "much"
 parseAdA (Atom "far_AdA") = Just "far"
+parseAdA (Atom "however_AdA") = Just "however"
 parseAdA (Atom "slightly_AdA") = Just "slightly"
 parseAdA (Atom "less_AdA") = Just "less"
 parseAdA (Atom "more_AdA") = Just "more"
+parseAdA (Atom "too_AdA") = Just "too"
+parseAdA (Atom "not_AdA") = Just "not"
+parseAdA (Atom "altogether_AdA") = Just "altogether"
 parseAdA _ = Nothing
 
 parsePN ∷ SExp → Maybe String
@@ -407,6 +585,8 @@ parsePron (Atom "i_Pron")    = Just (First, Singular)
 parsePron (Atom "we_Pron")   = Just (First, Plural)
 parsePron (Atom "you_Pron")  = Just (Second, Singular)
 parsePron (Atom "youPl_Pron") = Just (Second, Plural)
+parsePron (Atom "ye_Pron")   = Just (Second, Plural)
+parsePron (Atom "thee_Pron") = Just (Second, Singular)
 parsePron (Atom "he_Pron")   = Just (Third, Singular)
 parsePron (Atom "she_Pron")  = Just (Third, Singular)
 parsePron (Atom "it_Pron")   = Just (Third, Singular)
@@ -422,12 +602,21 @@ stripSuffix suffix s =
 
 skipAgreement ∷ VerbPhrase → Bool
 skipAgreement (Copula _) = True
+skipAgreement (CopulaNP _) = True
+skipAgreement (CopulaAdv _) = True
+skipAgreement (SeemAdj _) = True
+skipAgreement (SeemNP _) = True
+skipAgreement (SeemAdv _) = True
+skipAgreement (FeelAdj _) = True
+skipAgreement (GrowAdj _) = True
+skipAgreement (GoAdj _) = True
 skipAgreement (Passive _) = True
 skipAgreement (Progressive _) = True
 skipAgreement (Perfective _) = True
 skipAgreement (VVComplement _ _) = True
 skipAgreement (V2VComplement _ _ _) = True
 skipAgreement (VSComplement _ _) = True
+skipAgreement (PassiveVSComplement _ _) = True
 skipAgreement (VPWithAdv vp _) = skipAgreement vp
 skipAgreement (CoordVP _ a b) = skipAgreement a && skipAgreement b
 skipAgreement _ = False
@@ -456,6 +645,8 @@ agreementOk Past Positive _ _ = True
 agreementOk Past Negative _ _ = True
 agreementOk Future Positive _ _ = True
 agreementOk Future Negative _ _ = True
+agreementOk Conditional Positive _ _ = True
+agreementOk Conditional Negative _ _ = True
 -- Present-perfect uses an agreeing auxiliary with a non-finite lexical verb.
 agreementOk Perfect Positive _ vform = vform == BaseForm
 agreementOk Perfect Negative _ vform = vform == BaseForm
@@ -467,6 +658,11 @@ translateSentence (Sentence t p subj vp) =
     , renderPolarity p
     , renderNP subj
     , renderVP vp
+    ]
+translateSentence (SentenceWithAdv sentence adv) =
+  unwords
+    [ renderAdv adv
+    , translateSentence sentence
     ]
 translateSentence (Question t p subj vp) =
   unwords
@@ -494,6 +690,11 @@ translateSentence (Imperative p vp) =
   unwords
     [ renderPolarity p
     , renderVP vp
+    ]
+translateSentence (Vocative sentence np) =
+  unwords
+    [ translateSentence sentence
+    , renderNP np
     ]
 
 translateFallback ∷ String → String
@@ -534,6 +735,10 @@ parseNP _ (List [Atom "UseN", n]) = do
     then pure (CommonNoun Nothing adjs noun num rel)
     else Nothing
 parseNP _ (List [Atom "UsePN", pn]) = ProperNoun <$> parsePN pn
+parseNP _ (Atom "ThisNP") = pure (Demonstrative "this" Singular)
+parseNP _ (Atom "ThatNP") = pure (Demonstrative "that" Singular)
+parseNP _ (Atom "TheseNP") = pure (Demonstrative "these" Plural)
+parseNP _ (Atom "ThoseNP") = pure (Demonstrative "those" Plural)
 parseNP c (List [Atom "UsePron", pr]) = do
   (p, n) <- parsePron pr
   pure (Pronoun p n c)
@@ -544,10 +749,50 @@ parseVP (List [Atom "AdvVP", vp, adv]) = do
   (baseVP, vf) <- parseVP vp
   advp <- parseAdv adv
   pure (VPWithAdv baseVP advp, vf)
+parseVP (List [Atom "PreAdvVP", adv, vp]) = do
+  advp <- parseAdV adv
+  (baseVP, vf) <- parseVP vp
+  pure (VPWithAdv baseVP advp, vf)
+parseVP (List [Atom "PreFullAdvVP", adv, vp]) = do
+  advp <- parseAdv adv
+  (baseVP, vf) <- parseVP vp
+  pure (VPWithAdv baseVP advp, vf)
 parseVP (List [Atom "ComplVV", vv, vp]) = do
   verb <- parseVV vv
   (compVP, _) <- parseVP vp
   pure (VVComplement verb compVP, BaseForm)
+parseVP (List [Atom "ComplVVCoord", vv, conj, vp1, vp2]) = do
+  verb <- parseVV vv
+  c <- parseConj conj
+  (comp1, _) <- parseVP vp1
+  (comp2, _) <- parseVP vp2
+  pure (VVComplement verb (CoordVP c comp1 comp2), BaseForm)
+parseVP (List [Atom "ComplVVSharedCoord", vv, conj, vp1, vp2]) = do
+  verb <- parseVV vv
+  c <- parseConj conj
+  (comp1, _) <- parseVP vp1
+  (comp2, _) <- parseVP vp2
+  pure (VVComplement verb (CoordVP c comp1 comp2), BaseForm)
+parseVP (List [Atom "SeriesVVSharedCoord3", vv, vp1, vp2, vp3]) = do
+  verb <- parseVV vv
+  (comp1, _) <- parseVP vp1
+  (comp2, _) <- parseVP vp2
+  (comp3, _) <- parseVP vp3
+  pure
+    ( VVComplement verb (CoordVP And comp1 (CoordVP And comp2 comp3))
+    , BaseForm
+    )
+parseVP (List [Atom "SeriesVVSharedCoord4", vv, vp1, vp2, vp3, vp4]) = do
+  verb <- parseVV vv
+  (comp1, _) <- parseVP vp1
+  (comp2, _) <- parseVP vp2
+  (comp3, _) <- parseVP vp3
+  (comp4, _) <- parseVP vp4
+  pure
+    ( VVComplement verb
+        (CoordVP And comp1 (CoordVP And comp2 (CoordVP And comp3 comp4)))
+    , BaseForm
+    )
 parseVP (List [Atom "ComplV2V", v2v, np, vp]) = do
   verb <- parseV2V v2v
   obj <- parseNP Objective np
@@ -557,6 +802,10 @@ parseVP (List [Atom "ComplVS", vs, s]) = do
   verb <- parseVS vs
   clause <- parseSentence s
   pure (VSComplement verb clause, BaseForm)
+parseVP (List [Atom "PassVSVP", vs, s]) = do
+  verb <- parseVS vs
+  clause <- parseSentence s
+  pure (PassiveVSComplement verb clause, BaseForm)
 parseVP (List [Atom "UseV", v]) = do
   (lemma, vf) <- parseV v
   pure (Intransitive lemma, vf)
@@ -565,11 +814,100 @@ parseVP (List [Atom "UseV2", v2, np]) = do
   obj <- parseNP Objective np
   pure (Transitive lemma obj, vf)
 parseVP (List [Atom "UseAP", a]) = do
-  adj <- parseA a
+  adj <- parseAP a
   pure (Copula adj, ThirdSingular)
+parseVP (List [Atom "UseNP", np]) = do
+  complement <- parseNP Subjective np
+  pure (CopulaNP complement, ThirdSingular)
+parseVP (List [Atom "UseAdv", adv]) = do
+  advp <- parseAdv adv
+  pure (CopulaAdv advp, ThirdSingular)
+parseVP (List [Atom "SeemAP", ap]) = do
+  adj <- parseAP ap
+  pure (SeemAdj adj, ThirdSingular)
+parseVP (List [Atom "SeemNP", np]) = do
+  complement <- parseNP Subjective np
+  pure (SeemNP complement, ThirdSingular)
+parseVP (List [Atom "SeemAdv", adv]) = do
+  advp <- parseAdv adv
+  pure (SeemAdv advp, ThirdSingular)
+parseVP (List [Atom "FeelAP", ap]) = do
+  adj <- parseAP ap
+  pure (FeelAdj adj, ThirdSingular)
+parseVP (List [Atom "GrowAP", ap]) = do
+  adj <- parseAP ap
+  pure (GrowAdj adj, ThirdSingular)
+parseVP (List [Atom "GoAP", ap]) = do
+  adj <- parseAP ap
+  pure (GoAdj adj, ThirdSingular)
 parseVP (List [Atom "PassV2VP", v2]) = do
   (lemma, _) <- parseV2 v2
   pure (Passive lemma, BaseForm)
+parseVP (List [Atom "MidAdvPassV2VP", adv, v2]) = do
+  advp <- parseAdv adv
+  (lemma, _) <- parseV2 v2
+  pure (VPWithAdv (Passive lemma) advp, BaseForm)
+parseVP (List [Atom "CoordPassV2VP", v21, v22]) = do
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  pure (CoordVP And (Passive lemma1) (Passive lemma2), BaseForm)
+parseVP (List [Atom "MidAdvCoordPassV2VP", adv, v21, v22]) = do
+  advp <- parseAdv adv
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  pure (VPWithAdv (CoordVP And (Passive lemma1) (Passive lemma2)) advp, BaseForm)
+parseVP (List [Atom "SeriesPassV2VP3", v21, v22, v23]) = do
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  (lemma3, _) <- parseV2 v23
+  pure
+    ( CoordVP And
+        (Passive lemma1)
+        (CoordVP And (Passive lemma2) (Passive lemma3))
+    , BaseForm
+    )
+parseVP (List [Atom "MidAdvSeriesPassV2VP3", adv, v21, v22, v23]) = do
+  advp <- parseAdv adv
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  (lemma3, _) <- parseV2 v23
+  pure
+    ( VPWithAdv
+        (CoordVP And
+          (Passive lemma1)
+          (CoordVP And (Passive lemma2) (Passive lemma3)))
+        advp
+    , BaseForm
+    )
+parseVP (List [Atom "SeriesPassV2VP4", v21, v22, v23, v24]) = do
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  (lemma3, _) <- parseV2 v23
+  (lemma4, _) <- parseV2 v24
+  pure
+    ( CoordVP And
+        (Passive lemma1)
+        (CoordVP And
+          (Passive lemma2)
+          (CoordVP And (Passive lemma3) (Passive lemma4)))
+    , BaseForm
+    )
+parseVP (List [Atom "MidAdvSeriesPassV2VP4", adv, v21, v22, v23, v24]) = do
+  advp <- parseAdv adv
+  (lemma1, _) <- parseV2 v21
+  (lemma2, _) <- parseV2 v22
+  (lemma3, _) <- parseV2 v23
+  (lemma4, _) <- parseV2 v24
+  pure
+    ( VPWithAdv
+        (CoordVP And
+          (Passive lemma1)
+          (CoordVP And
+            (Passive lemma2)
+            (CoordVP And (Passive lemma3) (Passive lemma4))))
+        advp
+    , BaseForm
+    )
 parseVP (List [Atom "ProgressVP", vp]) = do
   (baseVP, _) <- parseVP vp
   pure (Progressive baseVP, BaseForm)
@@ -660,6 +998,7 @@ renderNP ∷ NounPhrase → String
 renderNP (CoordNP c a b) =
   unwords [renderNP a, renderConj c, renderNP b]
 renderNP (ProperNoun s) = fantasyToken s
+renderNP (Demonstrative s _) = fantasyToken s
 renderNP (Pronoun p n c) = fantasyToken (renderPronoun p n c)
 renderNP (PossessedNoun owner adjs noun _ rel) =
   let base = unwords ([renderNP owner, fantasyToken "poss"] ++ map fantasyToken (adjs ++ [noun]))
@@ -685,11 +1024,28 @@ renderVP (V2VComplement v obj vp) =
   unwords [fantasyToken v, renderNP obj, renderInfinitiveVP vp]
 renderVP (VSComplement v sentence) =
   unwords [fantasyToken v, fantasyToken "that", renderEmbeddedSentence sentence]
-renderVP (Copula adj) = unwords [fantasyToken "be", fantasyToken adj]
+renderVP (PassiveVSComplement v sentence) =
+  unwords [fantasyToken "be", fantasyToken v, fantasyToken "that", renderEmbeddedSentence sentence]
+renderVP (Copula adj) = unwords [fantasyToken "be", renderAdjPhrase adj]
+renderVP (CopulaNP np) = unwords [fantasyToken "be", renderNP np]
+renderVP (CopulaAdv adv) = unwords [fantasyToken "be", renderAdv adv]
+renderVP (SeemAdj adj) = unwords [fantasyToken "seem", renderAdjPhrase adj]
+renderVP (SeemNP np) = unwords [fantasyToken "seem", renderNP np]
+renderVP (SeemAdv adv) = unwords [fantasyToken "seem", renderAdv adv]
+renderVP (FeelAdj adj) = unwords [fantasyToken "feel", renderAdjPhrase adj]
+renderVP (GrowAdj adj) = unwords [fantasyToken "grow", renderAdjPhrase adj]
+renderVP (GoAdj adj) = unwords [fantasyToken "go", renderAdjPhrase adj]
 renderVP (Passive v) = unwords [fantasyToken "be", fantasyToken v]
 renderVP (Progressive vp) = unwords [fantasyToken "be", renderVP vp]
 renderVP (Perfective vp) = unwords [fantasyToken "have", renderVP vp]
 renderVP (VPWithAdv vp adv) = unwords [renderVP vp, renderAdv adv]
+
+renderAdjPhrase ∷ AdjPhrase → String
+renderAdjPhrase (BareAdj adj) = fantasyToken adj
+renderAdjPhrase (ModifiedAdj modifier adj) =
+  unwords [fantasyToken modifier, renderAdjPhrase adj]
+renderAdjPhrase (CoordAdj c a b) =
+  unwords [renderAdjPhrase a, renderConj c, renderAdjPhrase b]
 
 renderInfinitiveVP ∷ VerbPhrase → String
 renderInfinitiveVP vp =
@@ -728,6 +1084,7 @@ renderConj Or  = fantasyToken "or"
 isThirdSingular ∷ NounPhrase → Bool
 isThirdSingular (CoordNP _ _ _) = False
 isThirdSingular (ProperNoun _) = True
+isThirdSingular (Demonstrative _ Singular) = True
 isThirdSingular (PossessedNoun _ _ _ Singular _) = True
 isThirdSingular (CommonNoun _ _ _ Singular _) = True
 isThirdSingular (Pronoun Third Singular _) = True
@@ -737,6 +1094,7 @@ renderTense ∷ Tense → String
 renderTense Present = "ta"
 renderTense Past    = "na"
 renderTense Future  = "va"
+renderTense Conditional = "ca"
 renderTense Perfect = "sa"
 
 renderPolarity ∷ Polarity → String
@@ -752,8 +1110,16 @@ renderRelClause (RelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken v, renderNP obj]
 renderRelClause (NegRelV2 v obj) =
   unwords [fantasyToken "that", fantasyToken "not", fantasyToken v, renderNP obj]
+renderRelClause (RelWhoseBe noun subj) =
+  unwords [fantasyToken "whose", fantasyToken noun, renderNP subj, fantasyToken "am"]
 renderRelClause (RelPrep prep obj) =
   unwords [fantasyToken prep, renderNP obj]
+renderRelClause (RelPrepSentence prep sentence) =
+  unwords [fantasyToken prep, renderEmbeddedSentence sentence]
+renderRelClause (PostAdj adj) =
+  renderAdjPhrase adj
+renderRelClause (RelChain left right) =
+  unwords [renderRelClause left, renderRelClause right]
 
 renderAdv ∷ AdvPhrase → String
 renderAdv (PrepPhrase prep np) =
@@ -763,6 +1129,8 @@ renderAdv (ClausePhrase subj sentence) =
 renderAdv (LexicalAdv adv) = fantasyToken adv
 renderAdv (ModifiedAdv modifier adv) =
   unwords [fantasyToken modifier, renderAdv adv]
+renderAdv (CoordAdv c left right) =
+  unwords [renderAdv left, renderConj c, renderAdv right]
 
 renderPronoun ∷ Person → Number → PronounCase → String
 renderPronoun First Singular Subjective = "i"
@@ -846,4 +1214,155 @@ validateExpr ∷ Expr → Maybe (Sentence, [String])
 validateExpr expr = do
   sexp <- decodeExpr expr
   sentence <- parseSentence sexp
-  pure (sentence, collectSymbPN sexp)
+  if sentenceStructureOk sentence
+    then pure (sentence, collectSymbPN sexp)
+    else Nothing
+
+sentenceStructureOk ∷ Sentence → Bool
+sentenceStructureOk (Sentence _ _ subj vp) =
+  nounPhraseStructureOk subj && verbPhraseStructureOk vp
+sentenceStructureOk (SentenceWithAdv sentence adv) =
+  sentenceStructureOk sentence && advPhraseStructureOk adv
+sentenceStructureOk (Vocative sentence np) =
+  sentenceStructureOk sentence && nounPhraseStructureOk np
+sentenceStructureOk (Question _ _ subj vp) =
+  nounPhraseStructureOk subj && verbPhraseStructureOk vp
+sentenceStructureOk (WhQuestion _ _ clause) =
+  whClauseStructureOk clause
+sentenceStructureOk (Existential _ _ np) =
+  nounPhraseStructureOk np
+sentenceStructureOk (Imperative _ vp) =
+  verbPhraseStructureOk vp
+
+whClauseStructureOk ∷ WhClause → Bool
+whClauseStructureOk (SubjectWh _ vp) = verbPhraseStructureOk vp
+whClauseStructureOk (ObjectWh _ subj _) = nounPhraseStructureOk subj
+whClauseStructureOk (SubjectDetWh _ queried vp) =
+  nounPhraseStructureOk queried && verbPhraseStructureOk vp
+whClauseStructureOk (ObjectDetWh _ queried subj _) =
+  objectNounPhraseOk queried && nounPhraseStructureOk subj
+whClauseStructureOk (AdvWh _ subj vp) =
+  nounPhraseStructureOk subj && verbPhraseStructureOk vp
+
+verbPhraseStructureOk ∷ VerbPhrase → Bool
+verbPhraseStructureOk (Intransitive verb) =
+  lexicalVerbHeadAllowed verb
+verbPhraseStructureOk (Transitive verb obj) =
+  lexicalVerbHeadAllowed verb && objectNounPhraseOk obj
+verbPhraseStructureOk (VVComplement _ vp) = verbPhraseStructureOk vp
+verbPhraseStructureOk (V2VComplement _ obj vp) =
+  objectNounPhraseOk obj && verbPhraseStructureOk vp
+verbPhraseStructureOk (VSComplement _ sentence) = sentenceStructureOk sentence
+verbPhraseStructureOk (PassiveVSComplement _ sentence) = sentenceStructureOk sentence
+verbPhraseStructureOk (Copula adj) = adjPhraseStructureOk adj
+verbPhraseStructureOk (CopulaNP np) = nounPhraseStructureOk np
+verbPhraseStructureOk (CopulaAdv adv) = advPhraseStructureOk adv
+verbPhraseStructureOk (SeemAdj adj) = adjPhraseStructureOk adj
+verbPhraseStructureOk (SeemNP np) = nounPhraseStructureOk np
+verbPhraseStructureOk (SeemAdv adv) = advPhraseStructureOk adv
+verbPhraseStructureOk (FeelAdj adj) = adjPhraseStructureOk adj
+verbPhraseStructureOk (GrowAdj adj) = adjPhraseStructureOk adj
+verbPhraseStructureOk (GoAdj adj) = adjPhraseStructureOk adj
+verbPhraseStructureOk (Passive _) = True
+verbPhraseStructureOk (Progressive vp) = verbPhraseStructureOk vp
+verbPhraseStructureOk (Perfective vp) = verbPhraseStructureOk vp
+verbPhraseStructureOk (VPWithAdv vp adv) =
+  verbPhraseStructureOk vp && advPhraseStructureOk adv
+verbPhraseStructureOk (CoordVP _ a b) =
+  verbPhraseStructureOk a && verbPhraseStructureOk b
+
+advPhraseStructureOk ∷ AdvPhrase → Bool
+advPhraseStructureOk (PrepPhrase _ np) = nounPhraseStructureOk np
+advPhraseStructureOk (ClausePhrase _ sentence) = sentenceStructureOk sentence
+advPhraseStructureOk (LexicalAdv _) = True
+advPhraseStructureOk (ModifiedAdv _ adv) = advPhraseStructureOk adv
+advPhraseStructureOk (CoordAdv _ left right) =
+  advPhraseStructureOk left && advPhraseStructureOk right
+
+adjPhraseStructureOk ∷ AdjPhrase → Bool
+adjPhraseStructureOk (BareAdj adj) = not (null adj)
+adjPhraseStructureOk (ModifiedAdj modifier adj) =
+  not (null modifier) && adjPhraseStructureOk adj
+adjPhraseStructureOk (CoordAdj _ a b) =
+  adjPhraseStructureOk a && adjPhraseStructureOk b
+
+nounPhraseStructureOk ∷ NounPhrase → Bool
+nounPhraseStructureOk (ProperNoun _) = True
+nounPhraseStructureOk (Demonstrative _ _) = True
+nounPhraseStructureOk (Pronoun _ _ _) = True
+nounPhraseStructureOk (CommonNoun _ adjs noun _ relClause) =
+  commonNounHeadAllowed adjs noun && maybe True relClauseStructureOk relClause
+nounPhraseStructureOk (PossessedNoun owner adjs noun _ relClause) =
+  nounPhraseStructureOk owner
+    && commonNounHeadAllowed adjs noun
+    && maybe True relClauseStructureOk relClause
+nounPhraseStructureOk (CoordNP _ a b) =
+  nounPhraseStructureOk a && nounPhraseStructureOk b
+
+relClauseStructureOk ∷ RelClause → Bool
+relClauseStructureOk (RelVP vp) = verbPhraseStructureOk vp
+relClauseStructureOk (NegRelVP vp) = verbPhraseStructureOk vp
+relClauseStructureOk (RelV2 _ np) = objectNounPhraseOk np
+relClauseStructureOk (NegRelV2 _ np) = objectNounPhraseOk np
+relClauseStructureOk (RelWhoseBe _ np) = nounPhraseStructureOk np
+relClauseStructureOk (RelPrep _ np) = nounPhraseStructureOk np
+relClauseStructureOk (RelPrepSentence _ sentence) = sentenceStructureOk sentence
+relClauseStructureOk (PostAdj adj) = adjPhraseStructureOk adj
+relClauseStructureOk (RelChain left right) =
+  relClauseStructureOk left && relClauseStructureOk right
+
+objectNounPhraseOk ∷ NounPhrase → Bool
+objectNounPhraseOk np =
+  nounPhraseStructureOk np && not (isIllFormedBareSingularObject np)
+
+isIllFormedBareSingularObject ∷ NounPhrase → Bool
+isIllFormedBareSingularObject (CommonNoun Nothing _ noun Singular Nothing) =
+  not (bareSingularObjectNounAllowed noun)
+isIllFormedBareSingularObject (CoordNP _ a b) =
+  isIllFormedBareSingularObject a || isIllFormedBareSingularObject b
+isIllFormedBareSingularObject _ = False
+
+bareSingularObjectNounAllowed ∷ String → Bool
+bareSingularObjectNounAllowed noun
+  | isMassNounHint noun = True
+  | otherwise =
+      map toLower noun `elem`
+        [ "breakfast"
+        , "dinner"
+        , "fun"
+        , "harm"
+        , "help"
+        , "home"
+        , "lunch"
+        , "news"
+        , "progress"
+        , "research"
+        , "school"
+        , "sight"
+        , "trouble"
+        , "work"
+        ]
+
+commonNounHeadAllowed ∷ [String] → String → Bool
+commonNounHeadAllowed adjs noun =
+  case map toLower noun of
+    "how" ->
+      map (map toLower) adjs == ["much"]
+    lowerNoun ->
+      lowerNoun `notElem`
+        [ "all"
+        , "many"
+        , "much"
+        ]
+
+lexicalVerbHeadAllowed ∷ String → Bool
+lexicalVerbHeadAllowed verb =
+  map toLower verb `notElem`
+    [ "all"
+    , "fewer"
+    , "how"
+    , "less"
+    , "many"
+    , "more"
+    , "much"
+    ]
