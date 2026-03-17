@@ -65,3 +65,7 @@ spec grammars = describe "Progressive aspect" $ do
       Sentence Present Positive
         (Pronoun First Singular Subjective)
         (Progressive (Intransitive "run"))
+
+  it "parses the corpus-shaped progressive breakup clause: the icebound stream of Time is breaking up" $ do
+    let exprs = parseControlled grammars "the icebound stream of Time is breaking up"
+    shouldParse exprs

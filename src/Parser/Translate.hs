@@ -10,7 +10,7 @@ module Parser.Translate
 
 import Control.Applicative ((<|>))
 import Data.Char (isAlpha, isSpace, toLower)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, isSuffixOf)
 import PGF hiding (Token)
 import Parser.AST
 
@@ -119,6 +119,9 @@ parseSentence (List [Atom "VocativeUtt", utt, np]) = do
   sentence <- parseSentence utt
   addressee <- parseNP Subjective np
   pure (Vocative sentence addressee)
+parseSentence (List [Atom "OhLeadUtt", utt]) = do
+  sentence <- parseSentence utt
+  pure (SentenceWithAdv sentence (LexicalAdv "oh"))
 parseSentence (List [Atom "MkS", t, p, cl]) = do
   tense'    <- parseTense t
   polarity' <- parsePolarity p
@@ -380,6 +383,7 @@ parseSubj (Atom "because_Subj") = Just "because"
 parseSubj (Atom "if_Subj")      = Just "if"
 parseSubj (Atom "when_Subj")    = Just "when"
 parseSubj (Atom "while_Subj")   = Just "while"
+parseSubj (Atom "where_Subj")   = Just "where"
 parseSubj _                     = Nothing
 
 parseRP ∷ SExp → Maybe ()
@@ -1325,6 +1329,7 @@ isIllFormedBareSingularObject _ = False
 bareSingularObjectNounAllowed ∷ String → Bool
 bareSingularObjectNounAllowed noun
   | isMassNounHint noun = True
+  | isIndefinitePronounLike noun = True
   | otherwise =
       map toLower noun `elem`
         [ "breakfast"
@@ -1342,6 +1347,20 @@ bareSingularObjectNounAllowed noun
         , "trouble"
         , "work"
         ]
+
+isIndefinitePronounLike ∷ String → Bool
+isIndefinitePronounLike noun =
+  hasIndefinitePrefix lower && hasIndefinitePronounSuffix lower
+  where
+    lower = map toLower noun
+
+hasIndefinitePrefix ∷ String → Bool
+hasIndefinitePrefix noun =
+  any (`isPrefixOf` noun) ["any", "every", "no", "some"]
+
+hasIndefinitePronounSuffix ∷ String → Bool
+hasIndefinitePronounSuffix noun =
+  any (`isSuffixOf` noun) ["body", "one", "thing"]
 
 commonNounHeadAllowed ∷ [String] → String → Bool
 commonNounHeadAllowed adjs noun =

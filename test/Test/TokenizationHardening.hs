@@ -78,3 +78,13 @@ spec grammars = describe "Tokenization hardening" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") [] "vatican" Plural Nothing)
         (Copula (BareAdj "big"))
+
+  it "parses sentence-initial interjection lead-in: Oh, the whale will be a king." $ do
+    let exprs = parseControlled grammars "Oh, the whale will be a king."
+    shouldParse exprs
+    exprs `shouldParseAs`
+      SentenceWithAdv
+        (Sentence Future Positive
+          (CommonNoun (Just "the") [] "whale" Singular Nothing)
+          (CopulaNP (CommonNoun (Just "a") [] "king" Singular Nothing)))
+        (LexicalAdv "oh")

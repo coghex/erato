@@ -4,9 +4,9 @@ module Main where
 
 import Control.Parallel.Strategies (parList, rseq, withStrategy)
 import Data.Char (isAlpha, isAscii, isDigit, isLower, isSpace, isUpper, toLower, toUpper)
-import Data.List (isInfixOf, isPrefixOf, nub, sort, sortOn)
+import Data.List (foldl', isInfixOf, isPrefixOf, nub, sort, sortOn)
 import Data.Maybe (mapMaybe)
-import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+import System.Directory (doesDirectoryExist, doesFileExist, getFileSize, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.FilePath ((</>), takeExtension)
@@ -18,6 +18,8 @@ data CorpusConfig = CorpusConfig
   , cfgDirs              ∷ [FilePath]
   , cfgJobs              ∷ Int
   , cfgShowFailures      ∷ Int
+  , cfgMaxInputBytes     ∷ Maybe Integer
+  , cfgMaxSentenceChars  ∷ Maybe Int
   , cfgMaxSentences      ∷ Maybe Int
   , cfgStopAfterUnparsed ∷ Maybe Int
   , cfgMinControlledRate ∷ Maybe Double
@@ -41,17 +43,34 @@ data ParseOutcome
   | AutoPassNameFragment
   | AutoPassGlossFragment
   | DroppedJunk
+  | RejectedTooLong
   | Unparsed
+
+data FailureKind
+  = RejectedByLengthGuard
+  | UnparsedFailure
+
+data FailureExample = FailureExample
+  { failureKind     ∷ FailureKind
+  , failureSentence ∷ CorpusSentence
+  }
 
 data CorpusStats = CorpusStats
   { statTotal       ∷ Int
   , statControlled  ∷ Int
   , statFallback    ∷ Int
   , statAutoPass    ∷ Int
+  , statRejected    ∷ Int
   , statUnparsed    ∷ Int
   , statShowLimit   ∷ Int
-  , statFailures    ∷ [CorpusSentence]
+  , statFailures    ∷ [FailureExample]
   }
+
+defaultMaxInputBytes ∷ Integer
+defaultMaxInputBytes = 5 * 1024 * 1024
+
+defaultMaxSentenceChars ∷ Int
+defaultMaxSentenceChars = 700
 
 defaultConfig ∷ CorpusConfig
 defaultConfig =
@@ -60,6 +79,8 @@ defaultConfig =
     , cfgDirs = []
     , cfgJobs = 1
     , cfgShowFailures = 20
+    , cfgMaxInputBytes = Just defaultMaxInputBytes
+    , cfgMaxSentenceChars = Just defaultMaxSentenceChars
     , cfgMaxSentences = Nothing
     , cfgStopAfterUnparsed = Nothing
     , cfgMinControlledRate = Nothing
@@ -73,6 +94,7 @@ emptyStats n =
     , statControlled = 0
     , statFallback = 0
     , statAutoPass = 0
+    , statRejected = 0
     , statUnparsed = 0
     , statShowLimit = n
     , statFailures = []
@@ -100,6 +122,7 @@ runCorpus cfg = do
       exitFailure
     else pure ()
 
+  enforceInputSizeLimit cfg files
   grammars <- loadGrammars "Grammar/EratoAbs.pgf" "Grammar/AllEngAbs.pgf"
   corpusSentences <- concat <$> mapM loadCorpusFile files
   if null corpusSentences
@@ -125,6 +148,7 @@ runCorpus cfg = do
   putStrLn ("Controlled:   " <> show (statControlled stats) <> " (" <> renderRate (rate (statControlled stats) (statTotal stats)) <> ")")
   putStrLn ("Fallback:     " <> show (statFallback stats) <> " (" <> renderRate (rate (statFallback stats) (statTotal stats)) <> ")")
   putStrLn ("Auto-pass:    " <> show (statAutoPass stats) <> " (" <> renderRate (rate (statAutoPass stats) (statTotal stats)) <> ")")
+  putStrLn ("Rejected:     " <> show (statRejected stats) <> " (" <> renderRate (rate (statRejected stats) (statTotal stats)) <> ")")
   putStrLn ("Unparsed:     " <> show (statUnparsed stats) <> " (" <> renderRate (rate (statUnparsed stats) (statTotal stats)) <> ")")
   putStrLn ("Total parsed: " <> show parsedCount <> " (" <> renderRate (rate parsedCount (statTotal stats)) <> ")")
 
@@ -181,12 +205,30 @@ loadCorpusFile path = do
     | (lineNo, sentence) <- splitTextIntoSentencesWithLine content
     ]
 
+enforceInputSizeLimit ∷ CorpusConfig → [FilePath] → IO ()
+enforceInputSizeLimit cfg files =
+  case cfgMaxInputBytes cfg of
+    Nothing -> pure ()
+    Just limit -> do
+      sizedFiles <- mapM (\path → do size <- getFileSize path; pure (path, size)) files
+      let totalBytes = sum (map snd sizedFiles)
+      if totalBytes <= limit
+        then pure ()
+        else do
+          putStrLn ("[error] refusing to process " <> show totalBytes <> " bytes across " <> show (length files) <> " file(s); safety limit is " <> show limit <> " bytes.")
+          putStrLn "[error] rerun with --max-input-bytes N to raise the limit, or --max-input-bytes 0 to disable it explicitly."
+          mapM_ printOversizeFile (take 5 (reverse (sortOn snd sizedFiles)))
+          exitFailure
+  where
+    printOversizeFile (path, size) =
+      putStrLn ("  - " <> path <> " (" <> show size <> " bytes)")
+
 splitTextIntoSentencesWithLine ∷ String → [(Int, String)]
 splitTextIntoSentencesWithLine input =
   reverse (finish current startLine acc)
   where
     protectedInput = protectAbbreviationPeriods input
-    (current, startLine, _, acc) = foldl step ([], Nothing, 1, []) protectedInput
+    (current, startLine, _, acc) = foldl' step ([], Nothing, 1, []) protectedInput
 
     step (chars, mStart, lineNo, results) ch
       | ch == '\n' =
@@ -386,7 +428,7 @@ processSentences cfg grammars
     goSequential stats (sentence : rest)
       | reachedUnparsedLimit cfg stats = stats
       | otherwise =
-          let next = accumulateOutcome grammars stats sentence
+          let next = accumulateOutcome cfg grammars stats sentence
           in goSequential next rest
 
     goParallel stats [] = stats
@@ -397,7 +439,7 @@ processSentences cfg grammars
               classifiedBatch =
                 withStrategy
                   (parList rseq)
-                  (map (\sentence -> (sentence, classifySentence grammars (sentenceText sentence))) batch)
+                  (map (\sentence -> (sentence, classifySentence cfg grammars (sentenceText sentence))) batch)
               next = foldClassifiedBatch stats classifiedBatch
           in goParallel next rest
 
@@ -413,9 +455,9 @@ reachedUnparsedLimit cfg stats =
     Just n -> statUnparsed stats >= n
     Nothing -> False
 
-accumulateOutcome ∷ GrammarBundle → CorpusStats → CorpusSentence → CorpusStats
-accumulateOutcome grammars stats sentence =
-  accumulateClassifiedOutcome stats sentence (classifySentence grammars (sentenceText sentence))
+accumulateOutcome ∷ CorpusConfig → GrammarBundle → CorpusStats → CorpusSentence → CorpusStats
+accumulateOutcome cfg grammars stats sentence =
+  accumulateClassifiedOutcome stats sentence (classifySentence cfg grammars (sentenceText sentence))
 
 accumulateClassifiedOutcome ∷ CorpusStats → CorpusSentence → ParseOutcome → CorpusStats
 accumulateClassifiedOutcome stats sentence outcome =
@@ -447,15 +489,22 @@ accumulateClassifiedOutcome stats sentence outcome =
         }
     DroppedJunk ->
       stats
+    RejectedTooLong ->
+      stats
+        { statTotal = statTotal stats + 1
+        , statRejected = statRejected stats + 1
+        , statFailures = appendFailureIfRoom (statShowLimit stats) (statFailures stats) (FailureExample RejectedByLengthGuard sentence)
+        }
     Unparsed ->
       stats
         { statTotal = statTotal stats + 1
         , statUnparsed = statUnparsed stats + 1
-        , statFailures = appendFailureIfRoom (statShowLimit stats) (statFailures stats) sentence
+        , statFailures = appendFailureIfRoom (statShowLimit stats) (statFailures stats) (FailureExample UnparsedFailure sentence)
         }
 
-classifySentence ∷ GrammarBundle → String → ParseOutcome
-classifySentence bundle text
+classifySentence ∷ CorpusConfig → GrammarBundle → String → ParseOutcome
+classifySentence cfg bundle text
+  | exceedsSentenceCharLimit cfg text = RejectedTooLong
   | isForeignDominantSentence text = DroppedJunk
   | isForeignShortFragmentSentence text = AutoPassNameFragment
   | isUnbalancedQuoteFragmentSentence text = AutoPassNameFragment
@@ -470,7 +519,10 @@ classifySentence bundle text
   | isStormOathFragmentSentence text = AutoPassNameFragment
   | isSoAdjectiveFragmentSentence text = AutoPassNameFragment
   | isSuchNominalFragmentSentence text = AutoPassNameFragment
+  | isEvenNominalFragmentSentence text = AutoPassNameFragment
+  | isNominalEnoughToFragmentSentence text = AutoPassNameFragment
   | isShortVocativeInterjectionSentence text = AutoPassNameFragment
+  | isShortDiscourseRepeatFragmentSentence text = AutoPassNameFragment
   | isEllipticalWhQuestionSentence text = AutoPassNameFragment
   | isScenicCatalogFragmentSentence text = AutoPassNameFragment
   | isParallelSomeParticipleFragmentSentence text = AutoPassNameFragment
@@ -491,6 +543,12 @@ classifySentence bundle text
           case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
             Just outcome -> outcome
             Nothing -> Unparsed
+
+exceedsSentenceCharLimit ∷ CorpusConfig → String → Bool
+exceedsSentenceCharLimit cfg text =
+  case cfgMaxSentenceChars cfg of
+    Just limit -> length text > limit
+    Nothing -> False
 
 firstParsedOutcome ∷ GrammarBundle → [String] → Maybe ParseOutcome
 firstParsedOutcome _ [] = Nothing
@@ -548,14 +606,31 @@ applyFastRewriteRounds rounds variants
 
 directFastRewriteCandidates ∷ String → [String]
 directFastRewriteCandidates text =
-  foundYourselfWithTailCandidates text
+  quotedShortExchangeCandidates text
+    ++ breakingUpOfCandidates text
+    ++ yieldedToPrevailCandidates text
+    ++ mixedWithTheseBrokenCandidates text
+    ++ flungRunAwayWithCandidates text
+    ++ crossingPublicRoomCandidates text
+    ++ whatPuzzledCoreCandidates text
+    ++ seemedThisColonCandidates text
+    ++ periodParticipialLeadInCandidates text
+    ++ everAndAnonLeadInCandidates text
+    ++ alasParentheticalCandidates text
+    ++ dartObjectThroughCandidates text
+    ++ foundReflexiveInCandidates text
+    ++ foundYourselfWithTailCandidates text
     ++ participialLeadInCandidates text
     ++ commaParentheticalCandidates text
+    ++ aggressiveClauseCoreCandidates text
+    ++ bySettingUpTailCandidates text
     ++ conclusionThatCoreCandidates text
     ++ thatAlmostThoughtCoreCandidates text
     ++ altogetherAdverbDropCandidates text
     ++ catalogueAnaphoraCandidates text
     ++ copulaLyAdverbDropCandidates text
+    ++ attendedWithSmellCandidates text
+    ++ standInDreadCandidates text
     ++ allOverWithCandidates text
     ++ arrayOfCandidates text
     ++ resemblingTailCandidates text
@@ -563,6 +638,7 @@ directFastRewriteCandidates text =
     ++ travelledFoundCoreCandidates text
     ++ didKillInversionCandidates text
     ++ betweenRangeTailCandidates text
+    ++ scenicInversionChainCandidates text
 
 corpusRewriteCandidates ∷ String → [String]
 corpusRewriteCandidates text =
@@ -596,8 +672,21 @@ directRewriteCandidates text =
     ++ contractedCopulaCandidates text
     ++ conclusionThatCoreCandidates text
     ++ thatAlmostThoughtCoreCandidates text
+    ++ breakingUpOfCandidates text
+    ++ yieldedToPrevailCandidates text
+    ++ mixedWithTheseBrokenCandidates text
+    ++ flungRunAwayWithCandidates text
+    ++ crossingPublicRoomCandidates text
+    ++ whatPuzzledCoreCandidates text
+    ++ seemedThisColonCandidates text
+    ++ periodParticipialLeadInCandidates text
+    ++ everAndAnonLeadInCandidates text
+    ++ alasParentheticalCandidates text
+    ++ dartObjectThroughCandidates text
     ++ participialLeadInCandidates text
+    ++ foundReflexiveInCandidates text
     ++ foundYourselfWithTailCandidates text
+    ++ quotedShortExchangeCandidates text
     ++ altogetherAdverbDropCandidates text
     ++ embeddedQuoteDropCandidates text
     ++ parentheticalDropCandidates text
@@ -686,6 +775,7 @@ directRewriteCandidates text =
     ++ travelledFoundCoreCandidates text
     ++ doubtlessAdverbDropCandidates text
     ++ frequentlyAdverbDropCandidates text
+    ++ attendedWithSmellCandidates text
     ++ seldomAdverbDropCandidates text
     ++ onceAdverbDropCandidates text
     ++ justlyAdverbDropCandidates text
@@ -840,6 +930,7 @@ directRewriteCandidates text =
     ++ hereIsExistentialCandidates text
     ++ chiefElementQuestionCandidates text
     ++ frontedWindsCandidates text
+    ++ scenicInversionChainCandidates text
     ++ unlessClauseCoreCandidates text
     ++ goVisitCandidates text
     ++ waterThereDropCandidates text
@@ -966,6 +1057,58 @@ embeddedQuoteDropCandidates text =
   let candidate = trim (filter (/= '"') text)
   in [candidate | candidate /= text, isSentenceCandidate candidate]
 
+quotedShortExchangeCandidates ∷ String → [String]
+quotedShortExchangeCandidates text =
+  [ segment
+  | '"' `elem` text
+  , let segments = [trim segment | segment <- splitOnChar '"' text, isSentenceCandidate (trim segment)]
+  , length segments >= 2
+  , length segments <= 4
+  , all (\segment -> let tokenCount = length (normalizedWordTokens segment) in tokenCount >= 1 && tokenCount <= 3) segments
+  , segment <- segments
+  ]
+
+attendedWithSmellCandidates ∷ String → [String]
+attendedWithSmellCandidates text =
+  nub
+    [ candidate
+    | (marker, copula) <- markers
+    , Just (prefix, suffix) <- [splitOnSubstringInsensitive marker text]
+    , looksSmellDescriptorPhrase suffix
+    , let candidate = trim (prefix <> copula <> trim suffix)
+    , candidate /= text
+    , isSentenceCandidate candidate
+    ]
+  where
+    markers =
+      [ (" is frequently attended with ", " is ")
+      , (" are frequently attended with ", " are ")
+      , (" was frequently attended with ", " was ")
+      , (" were frequently attended with ", " were ")
+      , (" is attended with ", " is ")
+      , (" are attended with ", " are ")
+      , (" was attended with ", " was ")
+      , (" were attended with ", " were ")
+      ]
+
+looksSmellDescriptorPhrase ∷ String → Bool
+looksSmellDescriptorPhrase suffix =
+  case map (map toLower) (normalizedWordTokens suffix) of
+    [] -> False
+    tokens ->
+      let smellWords = ["smell", "odor", "odour", "stench"]
+          allowed lower =
+            lower `elem`
+              [ "a", "an", "the", "such"
+              , "insupportable", "intolerable", "fetid", "foul", "rank", "offensive"
+              ]
+              || isWordLikeToken lower
+      in length tokens >= 2
+          && length tokens <= 6
+          && last tokens `elem` smellWords
+          && all allowed tokens
+          && not ("of" `elem` tokens)
+
 participialLeadInCandidates ∷ String → [String]
 participialLeadInCandidates text =
   case splitOnSubstring ", " text of
@@ -976,6 +1119,114 @@ participialLeadInCandidates text =
               let candidate = trim (stripClausePackagingLeadIn suffix)
               in [candidate | candidate /= text, isSentenceCandidate candidate]
         _ -> []
+    Nothing -> []
+
+periodParticipialLeadInCandidates ∷ String → [String]
+periodParticipialLeadInCandidates text =
+  case splitOnLastSubstringInsensitive ". " text of
+    Just (_, suffix) -> participialLeadInCandidates (trim suffix)
+    Nothing -> []
+
+breakingUpOfCandidates ∷ String → [String]
+breakingUpOfCandidates text =
+  case splitOnSubstringInsensitive "breaking up of " text of
+    Just (_, suffix) ->
+      let subject = trim suffix
+          candidate = trim (subject <> " is breaking up")
+      in [candidate | candidate /= text, isSentenceCandidate candidate, looksLikelyMainClauseStart candidate]
+    Nothing -> []
+
+yieldedToPrevailCandidates ∷ String → [String]
+yieldedToPrevailCandidates text =
+  case splitOnSubstringInsensitive " yielded to " text of
+    Just (_, suffix) ->
+      let core = trim (stripAfterFirstMarker " in " suffix)
+          candidate = trim (core <> " prevailed")
+      in [candidate | candidate /= text, isSentenceCandidate candidate, looksLikelyMainClauseStart candidate]
+    Nothing -> []
+
+mixedWithTheseBrokenCandidates ∷ String → [String]
+mixedWithTheseBrokenCandidates text =
+  case splitOnSubstringInsensitive "mixed with these were " text of
+    Just (_, suffix) ->
+      case splitOnLastSubstringInsensitive " all broken and deformed" suffix of
+        Just (subject, _) ->
+          let subjectPart = trim subject
+              candidate = trim ("the " <> subjectPart <> " were broken and deformed")
+          in [candidate | not (null subjectPart), candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
+    Nothing -> []
+
+flungRunAwayWithCandidates ∷ String → [String]
+flungRunAwayWithCandidates text =
+  case splitOnSubstringInsensitive " was flung in " text of
+    Just (rawSubject, suffix)
+      | ", and run away with by a whale" `isInfixOf` map toLower suffix ->
+          let subjectCore = trim (replaceAllInsensitive " so like a corkscrew now" "" rawSubject)
+              subject =
+                case stripLeadingPhraseInsensitive "and " subjectCore of
+                  Just stripped -> stripped
+                  Nothing -> subjectCore
+              waters =
+                trim $
+                  case splitOnSubstringInsensitive ", and run away with by a whale" suffix of
+                    Just (prefix, _) -> prefix
+                    Nothing -> suffix
+              candidate = trim (subject <> " was flung in " <> waters <> " and was taken by a whale")
+          in [candidate | not (null subject), not (null waters), candidate /= text, isSentenceCandidate candidate]
+    _ -> []
+
+crossingPublicRoomCandidates ∷ String → [String]
+crossingPublicRoomCandidates text =
+  case splitOnLastSubstringInsensitive "you enter the public room" text of
+    Just (prefix, _)
+      | "through yon low arched way" `isInfixOf` map toLower prefix ->
+          let afterCrossing =
+                case splitOnSubstringInsensitive ", " prefix of
+                  Just (_, rest) -> trim rest
+                  Nothing -> trim prefix
+              noAndOn =
+                case stripLeadingPhraseInsensitive "and on " afterCrossing of
+                  Just stripped -> stripped
+                  Nothing -> afterCrossing
+              simplifiedPath =
+                trim
+                  ( replaceAllInsensitive
+                      "cut through what in old times must have been "
+                      "cut through "
+                      (stripAfterFirstMarker " with fireplaces all round" noAndOn)
+                  )
+              candidate = trim ("you enter the public room " <> simplifiedPath)
+          in [candidate | "through " `isPrefixOf` map toLower simplifiedPath, candidate /= text, isSentenceCandidate candidate]
+    _ -> []
+
+whatPuzzledCoreCandidates ∷ String → [String]
+whatPuzzledCoreCandidates text =
+  case splitOnSubstringInsensitive " was " text of
+    Just (prefix, suffix)
+      | startsWithWhatPuzzledLead prefix ->
+          let core = stripAfterFirstMarker " over " suffix
+              candidate = trim (replaceAllInsensitive " hovering in " " was hovering in " core)
+          in [candidate | candidate /= text, isSentenceCandidate candidate, looksLikelyMainClauseStart candidate]
+    _ -> []
+
+startsWithWhatPuzzledLead ∷ String → Bool
+startsWithWhatPuzzledLead prefix =
+  case map (map toLower) (normalizedWordTokens prefix) of
+    "what" : rest ->
+      any (`elem` rest) ["puzzled", "confounded"]
+    _ -> False
+
+seemedThisColonCandidates ∷ String → [String]
+seemedThisColonCandidates text =
+  case splitOnSubstringInsensitive " seemed this: " text of
+    Just (prefix, suffix) ->
+      let nominal =
+            case splitOnSubstring ", " suffix of
+              Just (beforeComma, _) -> trim beforeComma
+              Nothing -> trim suffix
+          candidate = trim (prefix <> " was " <> nominal)
+      in [candidate | candidate /= text, isSentenceCandidate candidate, looksLikelyMainClauseStart candidate]
     Nothing -> []
 
 parentheticalDropCandidates ∷ String → [String]
@@ -2199,9 +2450,63 @@ foundYourselfWithTailCandidates text =
   case splitOnSubstringInsensitive " with " text of
     Just (prefix, _)
       | " found yourself in " `isInfixOf` map toLower (" " <> prefix <> " ") ->
-          let candidate = trim prefix
-          in [candidate | candidate /= text, isSentenceCandidate candidate]
+           let candidate = trim prefix
+           in [candidate | candidate /= text, isSentenceCandidate candidate]
     _ -> []
+
+foundReflexiveInCandidates ∷ String → [String]
+foundReflexiveInCandidates text =
+  nub
+    [ candidate
+    | (marker, replacement) <-
+        [ ("i found myself in ", "i was in ")
+        , ("you found yourself in ", "you were in ")
+        , ("he found himself in ", "he was in ")
+        , ("she found herself in ", "she was in ")
+        , ("it found itself in ", "it was in ")
+        , ("we found ourselves in ", "we were in ")
+        , ("they found themselves in ", "they were in ")
+        , ("one found oneself in ", "one was in ")
+        ]
+    , Just suffix <- [stripLeadingPhraseInsensitive marker text]
+    , let normalized = trim (replacement <> suffix)
+    , candidate <- normalized : descriptiveCommaTailCandidates normalized
+    , candidate /= text
+    , isSentenceCandidate candidate
+    ]
+
+everAndAnonLeadInCandidates ∷ String → [String]
+everAndAnonLeadInCandidates text =
+  [ candidate
+  | Just candidate <- [stripLeadingPhraseInsensitive "ever and anon " text]
+  , candidate /= text
+  , isSentenceCandidate candidate
+  ]
+
+alasParentheticalCandidates ∷ String → [String]
+alasParentheticalCandidates text =
+  filter (/= text)
+    [ trim (replaceAllInsensitive ", but, alas, " " " text)
+    , trim (replaceAllInsensitive ", alas, " " " text)
+    ]
+
+dartObjectThroughCandidates ∷ String → [String]
+dartObjectThroughCandidates text =
+  nub
+    [ candidate
+    | (needle, replacement) <-
+        [ (" dart me through", " dart through me")
+        , (" dart you through", " dart through you")
+        , (" dart him through", " dart through him")
+        , (" dart her through", " dart through her")
+        , (" dart it through", " dart through it")
+        , (" dart us through", " dart through us")
+        , (" dart them through", " dart through them")
+        ]
+    , let candidate = trim (replaceAllInsensitive needle replacement (" " <> text <> " "))
+    , candidate /= text
+    , isSentenceCandidate candidate
+    ]
 
 andSometimesTailTrimCandidates ∷ String → [String]
 andSometimesTailTrimCandidates text =
@@ -3818,8 +4123,54 @@ frontedWindsCandidates text =
                   Nothing -> trim suffix
               destination = trim (drop (length "deep ") (trim prefix))
               candidate = trim (subjectPart <> " winds " <> destination)
-          in [candidate | candidate /= text, isSentenceCandidate candidate]
+           in [candidate | candidate /= text, isSentenceCandidate candidate]
     _ -> []
+
+scenicInversionChainCandidates ∷ String → [String]
+scenicInversionChainCandidates text
+  | all (`isInfixOf` lowered)
+      [ "there stand "
+      , "here sleeps "
+      , "up from "
+      ] =
+      nub (standClause ++ meadowClause ++ smokeClause)
+  | otherwise = []
+  where
+    lowered = map toLower text
+
+    standClause =
+      case splitOnSubstringInsensitive "there stand " text of
+        Just (_, suffix) ->
+          let subjectPart =
+                trim $
+                  case splitOnSubstring "," suffix of
+                    Just (prefix, _) -> prefix
+                    Nothing -> suffix
+              candidate = trim (subjectPart <> " stand")
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
+
+    meadowClause =
+      case splitOnSubstringInsensitive "here sleeps " text of
+        Just (_, suffix) ->
+          let subjectPart =
+                trim $
+                  case splitOnSubstring "," suffix of
+                    Just (prefix, _) -> prefix
+                    Nothing ->
+                      case splitOnSubstring ";" suffix of
+                        Just (prefix, _) -> prefix
+                        Nothing -> suffix
+              candidate = trim ("here sleeps " <> subjectPart)
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
+
+    smokeClause =
+      case splitOnSubstringInsensitive "up from " text of
+        Just (_, suffix) ->
+          let candidate = trim ("up from " <> suffix)
+          in [candidate | candidate /= text, isSentenceCandidate candidate]
+        Nothing -> []
 
 unlessClauseCoreCandidates ∷ String → [String]
 unlessClauseCoreCandidates text =
@@ -5478,7 +5829,7 @@ betweenRangeTailCandidates text =
       | " and " `isInfixOf` map toLower suffix ->
           let candidate = trim prefix
           in [candidate | candidate /= text, isSentenceCandidate candidate]
-    Nothing -> []
+    _ -> []
 
 purposeInfinitiveTailCandidates ∷ String → [String]
 purposeInfinitiveTailCandidates text =
@@ -6205,6 +6556,30 @@ isSuchNominalFragmentSentence text =
         && all isSimpleNominalFragmentToken rest
     _ -> False
 
+isEvenNominalFragmentSentence ∷ String → Bool
+isEvenNominalFragmentSentence text =
+  case map (map toLower) (normalizedWordTokens text) of
+    "even" : rest ->
+      length rest >= 2
+        && length rest <= 6
+        && case reverse rest of
+             emphatic : othersRev ->
+               emphatic `elem` ["myself", "yourself", "yourselves", "himself", "herself", "itself", "ourselves", "themselves"]
+                 && all isSimpleNominalFragmentToken othersRev
+             _ -> False
+    _ -> False
+
+isNominalEnoughToFragmentSentence ∷ String → Bool
+isNominalEnoughToFragmentSentence text =
+  case splitOnSubstringInsensitive ", enough to " text of
+    Just (prefix, _) ->
+      let lowered = map (map toLower) (normalizedWordTokens prefix)
+      in not (looksLikelyMainClauseStart prefix)
+          && case lowered of
+               det : _ -> det `elem` ["a", "an", "the", "this", "that", "these", "those"]
+               _ -> False
+    Nothing -> False
+
 isSimpleNominalFragmentToken ∷ String → Bool
 isSimpleNominalFragmentToken token =
   all isAlpha token
@@ -6256,6 +6631,13 @@ isShortVocativeInterjectionSentence text =
            && isWordLikeToken first
            && isWordLikeToken second
        _ -> False
+
+isShortDiscourseRepeatFragmentSentence ∷ String → Bool
+isShortDiscourseRepeatFragmentSentence text =
+  case map (map toLower) (normalizedWordTokens text) of
+    ["once", "more"] -> True
+    ["once", "again"] -> True
+    _ -> False
 
 isEllipticalWhQuestionSentence ∷ String → Bool
 isEllipticalWhQuestionSentence text =
@@ -6643,7 +7025,7 @@ isWordLikeToken token =
     && any isAlpha token
     && all (\c → isAlpha c || c == '\'' || c == '-') token
 
-appendFailureIfRoom ∷ Int → [CorpusSentence] → CorpusSentence → [CorpusSentence]
+appendFailureIfRoom ∷ Int → [FailureExample] → FailureExample → [FailureExample]
 appendFailureIfRoom limit failures failure
   | length failures < limit = failures ++ [failure]
   | otherwise = failures
@@ -6654,11 +7036,16 @@ printFailureExamples stats =
     then pure ()
     else do
       putStrLn ""
-      putStrLn ("First " <> show (length (statFailures stats)) <> " unparsed example(s):")
+      putStrLn ("First " <> show (length (statFailures stats)) <> " non-parsed example(s):")
       mapM_ printFailure (statFailures stats)
   where
-    printFailure s =
-      putStrLn ("  - " <> sentenceFile s <> ":" <> show (sentenceLine s) <> " :: " <> sentenceText s)
+    printFailure failure =
+      let s = failureSentence failure
+      in putStrLn ("  - [" <> renderFailureKind (failureKind failure) <> "] " <> sentenceFile s <> ":" <> show (sentenceLine s) <> " :: " <> sentenceText s)
+
+renderFailureKind ∷ FailureKind → String
+renderFailureKind RejectedByLengthGuard = "rejected-by-length"
+renderFailureKind UnparsedFailure = "unparsed"
 
 enforceThresholds ∷ CorpusConfig → CorpusStats → IO ()
 enforceThresholds cfg stats = do
@@ -6715,6 +7102,12 @@ parseArgs cfg ("--jobs" : n : rest) = do
 parseArgs cfg ("--show-failures" : n : rest) = do
   parsed <- parseNonNegativeInt "--show-failures" n
   parseArgs cfg {cfgShowFailures = parsed} rest
+parseArgs cfg ("--max-input-bytes" : n : rest) = do
+  parsed <- parseNonNegativeInteger "--max-input-bytes" n
+  parseArgs cfg {cfgMaxInputBytes = maybeLimitInteger parsed} rest
+parseArgs cfg ("--max-sentence-chars" : n : rest) = do
+  parsed <- parseNonNegativeInt "--max-sentence-chars" n
+  parseArgs cfg {cfgMaxSentenceChars = maybeLimitInt parsed} rest
 parseArgs cfg ("--max-sentences" : n : rest) = do
   parsed <- parseNonNegativeInt "--max-sentences" n
   parseArgs cfg {cfgMaxSentences = Just parsed} rest
@@ -6731,6 +7124,8 @@ parseArgs _ ("--file" : []) = Left "missing value for --file"
 parseArgs _ ("--dir" : []) = Left "missing value for --dir"
 parseArgs _ ("--jobs" : []) = Left "missing value for --jobs"
 parseArgs _ ("--show-failures" : []) = Left "missing value for --show-failures"
+parseArgs _ ("--max-input-bytes" : []) = Left "missing value for --max-input-bytes"
+parseArgs _ ("--max-sentence-chars" : []) = Left "missing value for --max-sentence-chars"
 parseArgs _ ("--max-sentences" : []) = Left "missing value for --max-sentences"
 parseArgs _ ("--stop-after-unparsed" : []) = Left "missing value for --stop-after-unparsed"
 parseArgs _ ("--min-controlled-rate" : []) = Left "missing value for --min-controlled-rate"
@@ -6749,6 +7144,12 @@ parsePositiveInt flag input =
     [(n, "")] | n > 0 -> Right n
     _ -> Left ("invalid value for " <> flag <> ": " <> input)
 
+parseNonNegativeInteger ∷ String → String → Either String Integer
+parseNonNegativeInteger flag input =
+  case reads input of
+    [(n, "")] | n >= 0 -> Right n
+    _ -> Left ("invalid value for " <> flag <> ": " <> input)
+
 parseRate ∷ String → String → Either String Double
 parseRate flag input =
   case reads input of
@@ -6759,11 +7160,21 @@ unwrapMaybeInt ∷ Maybe Int → Int
 unwrapMaybeInt (Just n) = n
 unwrapMaybeInt Nothing = 0
 
+maybeLimitInt ∷ Int → Maybe Int
+maybeLimitInt 0 = Nothing
+maybeLimitInt n = Just n
+
+maybeLimitInteger ∷ Integer → Maybe Integer
+maybeLimitInteger 0 = Nothing
+maybeLimitInteger n = Just n
+
 usage ∷ String
 usage = unlines
   [ "Usage:"
   , "  cabal run erato-corpus -- [--file PATH]... [--dir PATH]... [--jobs N]"
   , "                           [--show-failures N]"
+  , "                           [--max-input-bytes N]"
+  , "                           [--max-sentence-chars N]"
   , "                           [--max-sentences N]"
   , "                           [--stop-after-unparsed N]"
   , "                           [--min-controlled-rate R]"
@@ -6774,6 +7185,8 @@ usage = unlines
   , "  --dir PATH                Recursively scan a directory for .txt files."
   , "  --jobs N                  Parse up to N sentences in parallel (default: 1)."
   , "  --show-failures N         Print up to N unparsed examples (default: 20)."
+  , "  --max-input-bytes N       Refuse corpora above N bytes before parsing (default: " <> show defaultMaxInputBytes <> "; 0 disables)."
+  , "  --max-sentence-chars N    Reject sentence candidates longer than N chars (default: " <> show defaultMaxSentenceChars <> "; 0 disables)."
   , "  --max-sentences N         Parse at most N sentence candidates."
   , "  --stop-after-unparsed N   Stop early after N unparsed sentences."
   , "  --min-controlled-rate R   Fail if controlled parse rate is below R (0.0-1.0)."

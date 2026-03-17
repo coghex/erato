@@ -83,6 +83,10 @@ spec grammars = describe "Imperatives" $ do
           (Transitive "give" (Pronoun Third Singular Objective))
           (LexicalAdv "up"))
 
+  it "parses the Moby-Dick hail imperative: sing out" $ do
+    let exprs = parseControlled grammars "sing out"
+    shouldParse exprs
+
   it "parses the Moby-Dick give-it-up vocative" $ do
     let exprs = parseControlled grammars "Give it up, Sub-Subs!"
     shouldParse exprs

@@ -202,6 +202,10 @@ spec grammars = describe "Verb adverbs" $ do
           (Intransitive "run"))
         (PrepPhrase "in" (CommonNoun (Just "the") [] "park" Singular Nothing))
 
+  it "parses the simplified fronted-winds corpus clause: a mazy way winds into distant woodlands" $ do
+    let exprs = parseControlled grammars "a mazy way winds into distant woodlands"
+    shouldParse exprs
+
   it "parses fronted discourse adverb: therefore you must not take the whale statements" $ do
     let exprs = parseControlled grammars "therefore you must not take the whale statements"
     shouldParse exprs
@@ -231,6 +235,10 @@ spec grammars = describe "Verb adverbs" $ do
 
   it "parses the next corpus fragment with veritable gospel cetology" $ do
     let exprs = parseControlled grammars "therefore you must not in every case at least take the higgledy-piggledy whale statements however authentic in these extracts for veritable gospel cetology"
+    shouldParse exprs
+
+  it "parses corpus lead-in with curated transitive verb and coordinated object" $ do
+    let exprs = parseControlled grammars "for my part I abominate all honorable respectable toils, trials, and tribulations of every kind whatsoever"
     shouldParse exprs
 
   it "parses touching as a sentence-initial discourse opener" $ do

@@ -74,7 +74,7 @@ def normalize_form(form: str | None) -> str | None:
 def is_single_token(lemma: str) -> bool:
     return " " not in lemma and "_" not in lemma
 
-def normalize_lemma(lemma: str) -> str | None:
+def normalize_lemma(lemma: str, *, allow_blocked: bool = False) -> str | None:
     lemma = lemma.strip()
     if not lemma:
         return None
@@ -84,7 +84,7 @@ def normalize_lemma(lemma: str) -> str | None:
         return None
     if not TOKEN_RE.match(lemma):
         return None
-    if lemma in BLOCKED_LEMMAS:
+    if not allow_blocked and lemma in BLOCKED_LEMMAS:
         return None
     return lemma
 
@@ -172,7 +172,7 @@ def load_extras(path: str | None):
     for entry in raw.get("nouns", []):
         if isinstance(entry, str):
             entry = {"lemma": entry}
-        lemma = normalize_lemma(str(entry.get("lemma", "")))
+        lemma = normalize_lemma(str(entry.get("lemma", "")), allow_blocked=True)
         if lemma is None:
             raise ValueError(f"invalid manual noun lemma: {entry!r}")
         extras["nouns"].append({
@@ -183,7 +183,7 @@ def load_extras(path: str | None):
     for entry in raw.get("verbs", []):
         if isinstance(entry, str):
             entry = {"lemma": entry}
-        lemma = normalize_lemma(str(entry.get("lemma", "")))
+        lemma = normalize_lemma(str(entry.get("lemma", "")), allow_blocked=True)
         if lemma is None:
             raise ValueError(f"invalid manual verb lemma: {entry!r}")
         extras["verbs"].append({
@@ -197,7 +197,7 @@ def load_extras(path: str | None):
 
     for entry in raw.get("adjectives", []):
         lemma = entry["lemma"] if isinstance(entry, dict) else entry
-        normalized = normalize_lemma(str(lemma))
+        normalized = normalize_lemma(str(lemma), allow_blocked=True)
         if normalized is None:
             raise ValueError(f"invalid manual adjective lemma: {entry!r}")
         extras["adjectives"].append(normalized)

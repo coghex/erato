@@ -18,6 +18,7 @@ nouns:
     plural: vaticans
   - lemma: cetology
     plural: cetologies
+  - lemma: might
 
 verbs:
   - lemma: fare
@@ -25,6 +26,12 @@ verbs:
     past: fared
     past_participle: fared
     present_participle: faring
+    transitive: true
+  - lemma: abominate
+    third_singular: abominates
+    past: abominated
+    past_participle: abominated
+    present_participle: abominating
     transitive: true
   - lemma: please
     third_singular: pleases
@@ -36,5 +43,8 @@ verbs:
 adjectives:
   - higgledy-piggledy
   - gospel
+  - hyperborean
+  - icebound
+  - mazy
   - rosy-strong
   - poor-devilish

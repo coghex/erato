@@ -48,12 +48,18 @@ The runner reports:
 - controlled parse rate,
 - fallback parse rate,
 - auto-pass count/rate for single-word entries (e.g., headings),
+- rejected count/rate for sentence candidates blocked by safety guards,
 - unparsed rate,
-- first N unparsed examples with file/line context.
+- first N non-parsed examples with file/line context.
 
 Useful speed controls:
 - `--max-sentences N` to cap how much text is processed,
 - `--stop-after-unparsed N` to bail out early once enough failures are seen.
+
+Safety controls:
+- `--max-input-bytes N` refuses corpora above a byte limit before parsing begins. The default is `5242880` bytes and `0` disables the check.
+- `--max-sentence-chars N` rejects very long sentence candidates before they reach the parser. The default is `600` characters and `0` disables the check.
+- The `erato` and `erato-corpus` executables are linked with a default RTS heap cap of `2G`, so runaway sessions fail fast instead of consuming unbounded memory.
 
 ## Generate Lexicon (from Kaikki/Wiktionary)
 

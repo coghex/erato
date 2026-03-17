@@ -98,6 +98,16 @@ spec grammars = describe "Pronouns" $ do
         (Pronoun Second Plural Subjective)
         (Intransitive "run")
 
+  it "normalizes archaic second-singular agreement: thou belongest to that hopeless tribe" $ do
+    let exprs = parseControlled grammars "thou belongest to that hopeless tribe"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (Pronoun Second Singular Subjective)
+        (VPWithAdv
+          (Intransitive "belong")
+          (PrepPhrase "to" (CommonNoun (Just "that") ["hopeless"] "tribe" Singular Nothing)))
+
   it "parses pronoun object: the dog eats me" $ do
     let exprs = parseControlled grammars "the dog eats me"
     shouldParse exprs

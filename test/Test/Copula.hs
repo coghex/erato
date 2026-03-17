@@ -170,6 +170,28 @@ spec grammars = describe "Copula (adjective predicate)" $ do
                 (CommonNoun Nothing [] "pistol" Singular Nothing)
                 (CommonNoun Nothing [] "ball" Singular Nothing))))
 
+    it "parses bare abstract noun subject: might is right" $ do
+      let exprs = parseControlled grammars "might is right"
+      shouldParse exprs
+      exprs `shouldParseAs`
+        Sentence Present Positive
+          (CommonNoun Nothing [] "might" Singular Nothing)
+          (Copula (BareAdj "right"))
+
+    it "parses nominal copula with bare abstract PP: the whale will be a giant in might" $ do
+      let exprs = parseControlled grammars "the whale will be a giant in might"
+      shouldParse exprs
+      exprs `shouldParseAs`
+        Sentence Future Positive
+          (CommonNoun (Just "the") [] "whale" Singular Nothing)
+          (VPWithAdv
+            (CopulaNP (CommonNoun (Just "a") [] "giant" Singular Nothing))
+            (PrepPhrase "in" (CommonNoun Nothing [] "might" Singular Nothing)))
+
+    it "parses the corpus-shaped nominal copula with curated adjective: it is a Hyperborean winter scene" $ do
+      let exprs = parseControlled grammars "it is a Hyperborean winter scene"
+      shouldParse exprs
+
     it "parses nominal copula question: is the man a sailor" $ do
       let exprs = parseControlled grammars "is the man a sailor"
       shouldParse exprs

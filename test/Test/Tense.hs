@@ -114,6 +114,30 @@ spec grammars = describe "Tense" $ do
         (CommonNoun (Just "the") [] "man" Singular Nothing)
         (Transitive "eat" (CommonNoun (Just "the") [] "food" Singular Nothing))
 
+  it "parses archaic perfect auxiliary with thou: thou hast made Leviathan" $ do
+    let exprs = parseControlled grammars "thou hast made Leviathan"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (Pronoun Second Singular Subjective)
+        (Transitive "make" (ProperNoun "Leviathan"))
+
+  it "parses archaic third-singular inflection: the whale maketh a path" $ do
+    let exprs = parseControlled grammars "the whale maketh a path"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Present Positive
+        (CommonNoun (Just "the") [] "whale" Singular Nothing)
+        (Transitive "make" (CommonNoun (Just "a") [] "path" Singular Nothing))
+
+  it "allows indefinite-pronoun objects under perfect aspect: we have received nothing certain" $ do
+    let exprs = parseControlled grammars "we have received nothing certain"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Perfect Positive
+        (Pronoun First Plural Subjective)
+        (Transitive "receive" (CommonNoun Nothing ["certain"] "nothing" Singular Nothing))
+
   it "parses perfect tense negation: the dog has not run" $ do
     let exprs = parseControlled grammars "the dog has not run"
     shouldParse exprs

@@ -34,6 +34,7 @@ library
 executable erato
     import:           warnings
     main-is:          Main.hs
+    ghc-options:      -rtsopts -with-rtsopts=-M2G
     build-depends: base
                  , erato
                  , stm
@@ -44,6 +45,7 @@ executable erato
 executable erato-corpus
     import:           warnings
     main-is:          CorpusMain.hs
+    ghc-options:      -rtsopts -with-rtsopts=-M2G
     build-depends:    base
                      , directory
                      , erato

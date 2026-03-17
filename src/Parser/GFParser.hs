@@ -11,8 +11,8 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
-import Data.Char (isAlpha, isAlphaNum, isUpper, toLower)
-import Data.List (isSuffixOf, minimumBy)
+import Data.Char (isAlpha, isAlphaNum, isUpper, toLower, toUpper)
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf, minimumBy)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import PGF
@@ -113,23 +113,196 @@ parseFallbackResults bundle input =
 prepareParseInputs ∷ Morpho → String → [(NormalizedInput, String)]
 prepareParseInputs morpho input =
   let tokenized = tokenizeInput input
+      rewritten0 = rewriteParseInput morpho tokenized
+      rewritten1 = rewriteParseInput morpho (normalizeKnownTokenCase morpho tokenized)
       rewrittenInputs =
         uniqueStrings
-          [ rewriteParseInput tokenized
-          , rewriteParseInput (normalizeKnownTokenCase morpho tokenized)
-          ]
+          (prioritizedRewriteVariants rewritten0 ++ prioritizedRewriteVariants rewritten1)
   in map (finalizeParseInput morpho) rewrittenInputs
 
-rewriteParseInput ∷ String → String
-rewriteParseInput =
+rewriteParseInput ∷ Morpho → String → String
+rewriteParseInput morpho =
   normalizeSentenceInitialPronoun
     . normalizeSentenceInitialBut
+    . normalizeArchaicEnglish morpho
     . normalizeLiteraryNames
     . normalizeDegreeModifiers
     . normalizeComparativeCorrelatives
     . normalizeObjectComparativeWh
     . normalizeQuestionNegationOrder
     . normalizeContractions
+
+strippedAsAffordingTail ∷ String → String
+strippedAsAffordingTail input =
+  case splitBeforeAsAffording (words input) of
+    Just prefixTokens
+      | not (null prefixTokens) ->
+          unwords prefixTokens
+    _ ->
+      input
+
+prioritizedRewriteVariants ∷ String → [String]
+prioritizedRewriteVariants input =
+  case simplifiedTouchingAsWellAsAffordingFrame input of
+    simplified
+      | simplified /= input -> [simplified]
+    _ -> [input]
+
+simplifiedTouchingAsWellAsAffordingFrame ∷ String → String
+simplifiedTouchingAsWellAsAffordingFrame input =
+  let stripped = strippedAsAffordingTail input
+  in if mentionsTouchingWellAsAndAffording input
+       then unwords (dropHereAppearingPair (words stripped))
+       else input
+
+mentionsTouchingWellAsAndAffording ∷ String → Bool
+mentionsTouchingWellAsAndAffording input =
+  let lower = map toLower input
+  in "as touching " `isPrefixOf` lower
+      && " as well as " `isInfixOf` lower
+      && " as affording " `isInfixOf` lower
+
+dropHereAppearingPair ∷ [String] → [String]
+dropHereAppearingPair ("here" : "appearing" : rest) =
+  dropHereAppearingPair rest
+dropHereAppearingPair (token : rest) =
+  token : dropHereAppearingPair rest
+dropHereAppearingPair [] = []
+
+splitBeforeAsAffording ∷ [String] → Maybe [String]
+splitBeforeAsAffording =
+  go []
+  where
+    go _ [] = Nothing
+    go _ [_] = Nothing
+    go acc rest@(first : second : tailTokens)
+      | map toLower first == "as"
+      , map toLower second == "affording" =
+          Just (reverse acc)
+      | otherwise =
+          go (first : acc) (second : tailTokens)
+
+normalizeArchaicEnglish ∷ Morpho → String → String
+normalizeArchaicEnglish morpho =
+  unwords . rewriteArchaicTokens morpho . words
+
+rewriteArchaicTokens ∷ Morpho → [String] → [String]
+rewriteArchaicTokens _ [] = []
+rewriteArchaicTokens morpho (token : next : rest)
+  | isThouToken token =
+      rewriteArchaicPronounToken token
+        : rewriteThouVerbToken morpho next
+        : rewriteArchaicTokens morpho rest
+rewriteArchaicTokens morpho (token : rest) =
+  rewriteStandaloneArchaicToken morpho token
+    : rewriteArchaicTokens morpho rest
+
+isThouToken ∷ String → Bool
+isThouToken token =
+  map toLower token == "thou"
+
+rewriteArchaicPronounToken ∷ String → String
+rewriteArchaicPronounToken token =
+  matchTokenCase token "you"
+
+rewriteStandaloneArchaicToken ∷ Morpho → String → String
+rewriteStandaloneArchaicToken morpho token
+  | lowerToken == "thy" =
+      matchTokenCase token "your"
+  | lowerToken == "thine" =
+      matchTokenCase token "yours"
+  | lowerToken == "thyself" =
+      matchTokenCase token "yourself"
+  | Just modern <- archaicThirdSingularModernForm morpho lowerToken =
+      matchTokenCase token modern
+  | otherwise =
+      token
+  where
+    lowerToken = map toLower token
+
+rewriteThouVerbToken ∷ Morpho → String → String
+rewriteThouVerbToken morpho token =
+  case archaicSecondSingularModernForm morpho (map toLower token) of
+    Just modern ->
+      matchTokenCase token modern
+    Nothing ->
+      rewriteStandaloneArchaicToken morpho token
+
+archaicSecondSingularModernForm ∷ Morpho → String → Maybe String
+archaicSecondSingularModernForm morpho token =
+  case token of
+    "art" -> Just "are"
+    "hast" -> Just "have"
+    "dost" -> Just "do"
+    "wilt" -> Just "will"
+    "shalt" -> Just "shall"
+    "wert" -> Just "were"
+    "hadst" -> Just "had"
+    "didst" -> Just "did"
+    _
+      | "est" `isSuffixOf` token ->
+          let stem = dropEnd 3 token
+              candidates = stem : [stem ++ "e"]
+          in findKnownMorphoForm morpho candidates
+      | otherwise ->
+          Nothing
+
+archaicThirdSingularModernForm ∷ Morpho → String → Maybe String
+archaicThirdSingularModernForm morpho token =
+  case token of
+    "hath" -> Just "has"
+    "doth" -> Just "does"
+    "saith" -> Just "says"
+    _
+      | "eth" `isSuffixOf` token ->
+          let stem = dropEnd 3 token
+              candidates = archaicStemCandidates stem
+          in findKnownInflectedForm morpho candidates
+      | otherwise ->
+          Nothing
+
+findKnownInflectedForm ∷ Morpho → [String] → Maybe String
+findKnownInflectedForm morpho =
+  findKnownMorphoForm morpho . map thirdPersonSingularForm
+
+findKnownMorphoForm ∷ Morpho → [String] → Maybe String
+findKnownMorphoForm morpho =
+  firstMatching (\candidate → not (null (lookupMorpho morpho candidate)))
+
+firstMatching ∷ (a → Bool) → [a] → Maybe a
+firstMatching _ [] = Nothing
+firstMatching predicate (candidate : rest)
+  | predicate candidate = Just candidate
+  | otherwise = firstMatching predicate rest
+
+dropEnd ∷ Int → String → String
+dropEnd n token =
+  take (length token - n) token
+
+archaicStemCandidates ∷ String → [String]
+archaicStemCandidates stem
+  | prefersSilentEStem stem =
+      [stem ++ "e", stem]
+  | otherwise =
+      [stem, stem ++ "e"]
+
+prefersSilentEStem ∷ String → Bool
+prefersSilentEStem stem =
+  length stem <= 3 && not (null stem)
+
+matchTokenCase ∷ String → String → String
+matchTokenCase source target =
+  case source of
+    first : _
+      | isUpper first ->
+          capitalize target
+    _ ->
+      target
+
+capitalize ∷ String → String
+capitalize [] = []
+capitalize (first : rest) =
+  toUpper first : rest
 
 normalizeLiteraryNames ∷ String → String
 normalizeLiteraryNames input =

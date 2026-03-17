@@ -61,3 +61,16 @@ spec grammars = describe "Subordinate clauses" $ do
             (Sentence Present Positive
               (CommonNoun (Just "the") [] "man" Singular Nothing)
               (Intransitive "run"))))
+
+  it "parses where-clause adjunct with copula: the whale will be a giant where might is right" $ do
+    let exprs = parseControlled grammars "the whale will be a giant where might is right"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Future Positive
+        (CommonNoun (Just "the") [] "whale" Singular Nothing)
+        (VPWithAdv
+          (CopulaNP (CommonNoun (Just "a") [] "giant" Singular Nothing))
+          (ClausePhrase "where"
+            (Sentence Present Positive
+              (CommonNoun Nothing [] "might" Singular Nothing)
+              (Copula (BareAdj "right")))))
