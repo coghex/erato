@@ -612,6 +612,7 @@ directFastRewriteCandidates text =
     ++ mixedWithTheseBrokenCandidates text
     ++ flungRunAwayWithCandidates text
     ++ crossingPublicRoomCandidates text
+    ++ sideStoodRaritiesCandidates text
     ++ whatPuzzledCoreCandidates text
     ++ seemedThisColonCandidates text
     ++ periodParticipialLeadInCandidates text
@@ -677,6 +678,7 @@ directRewriteCandidates text =
     ++ mixedWithTheseBrokenCandidates text
     ++ flungRunAwayWithCandidates text
     ++ crossingPublicRoomCandidates text
+    ++ sideStoodRaritiesCandidates text
     ++ whatPuzzledCoreCandidates text
     ++ seemedThisColonCandidates text
     ++ periodParticipialLeadInCandidates text
@@ -1199,6 +1201,15 @@ crossingPublicRoomCandidates text =
               candidate = trim ("you enter the public room " <> simplifiedPath)
           in [candidate | "through " `isPrefixOf` map toLower simplifiedPath, candidate /= text, isSentenceCandidate candidate]
     _ -> []
+
+sideStoodRaritiesCandidates ∷ String → [String]
+sideStoodRaritiesCandidates text
+  | "on one side stood " `isPrefixOf` map toLower (trim text)
+  , " filled with dusty rarities gathered from " `isInfixOf` map toLower text =
+      let noCracked = replaceAllInsensitive "covered with cracked glass cases" "covered with glass cases" text
+          candidate = trim (stripAfterFirstMarker " gathered from " noCracked)
+      in [candidate | candidate /= text, isSentenceCandidate candidate]
+  | otherwise = []
 
 whatPuzzledCoreCandidates ∷ String → [String]
 whatPuzzledCoreCandidates text =
