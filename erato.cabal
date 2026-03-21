@@ -63,10 +63,11 @@ test-suite erato-tests
                     , Test.Adjectives
                      , Test.Agreement
                      , Test.CommonVocabulary
-                     , Test.Complements
-                     , Test.Contractions
-                     , Test.Coordination
-                     , Test.Copula
+                      , Test.Complements
+                      , Test.Contractions
+                      , Test.CorpusRegression
+                      , Test.Coordination
+                      , Test.Copula
                     , Test.Determiners
                     , Test.Existential
                     , Test.Imperative

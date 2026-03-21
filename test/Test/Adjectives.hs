@@ -99,3 +99,31 @@ spec grammars = describe "Adjectives" $ do
       Sentence Present Positive
         (CommonNoun (Just "the") ["not", "altogether", "unpleasant"] "sadness" Singular Nothing)
         (Intransitive "run")
+
+  it "parses modified postnominal participial adjective phrase: he dusted a queer handkerchief mockingly embellished" $ do
+    let exprs = parseControlled grammars "he dusted a queer handkerchief mockingly embellished"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (Transitive "dust"
+          (CommonNoun (Just "a") ["queer"] "handkerchief" Singular
+            (Just (PostAdj (ModifiedAdj "mockingly" (BareAdj "embellished"))))))
+
+  it "parses postnominal participial adjective phrase with PP complement" $ do
+    let exprs = parseControlled grammars "he dusted a queer handkerchief mockingly embellished with all the gay flags of all the known nations of the world"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (Transitive "dust"
+          (CommonNoun (Just "a") ["queer"] "handkerchief" Singular
+            (Just (PostAdj
+              (AdjWithAdv
+                (ModifiedAdj "mockingly" (BareAdj "embellished"))
+                (PrepPhrase "with"
+                  (CommonNoun (Just "all the") ["gay"] "flag" Plural
+                    (Just (RelPrep "of"
+                      (CommonNoun (Just "all the") ["known"] "nation" Plural
+                        (Just (RelPrep "of"
+                          (CommonNoun (Just "the") [] "world" Singular Nothing)))))))))))))

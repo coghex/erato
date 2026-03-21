@@ -41,3 +41,13 @@ spec grammars = describe "Proper nouns (unknown words)" $ do
           (Sentence Present Positive
             (ProperNoun "Zorg")
             (Intransitive "run"))
+
+  it "parses comma appositive proper-noun subjects" $ do
+    parsePreferredControlledSentence grammars "Queequeg, a harpooneer, stands."
+      `shouldBe`
+        Just
+          (Sentence Present Positive
+            (AppositiveNP
+              (ProperNoun "Queequeg")
+              (CommonNoun (Just "a") [] "harpooneer" Singular Nothing))
+            (Intransitive "stand"))

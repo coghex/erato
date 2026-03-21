@@ -119,6 +119,10 @@ parseSentence (List [Atom "VocativeUtt", utt, np]) = do
   sentence <- parseSentence utt
   addressee <- parseNP Subjective np
   pure (Vocative sentence addressee)
+parseSentence (List [Atom "LeadNPUtt", np, utt]) = do
+  lead <- parseNP Subjective np
+  sentence <- parseSentence utt
+  pure (SentenceWithLeadNP (repairLeadNP lead) sentence)
 parseSentence (List [Atom "OhLeadUtt", utt]) = do
   sentence <- parseSentence utt
   pure (SentenceWithAdv sentence (LexicalAdv "oh"))
@@ -283,6 +287,32 @@ parseN (List [Atom "PrepCN", n, prep, np]) = do
   prepTxt <- parsePrep prep
   obj <- parseNP Objective np
   pure (num, adjs, noun, addRelClause rel (RelPrep prepTxt obj))
+parseN (List [Atom "PrepSeriesCN3", n, prep, np1, np2, np3]) = do
+  (num, adjs, noun, rel) <- parseN n
+  prepTxt <- parsePrep prep
+  obj1 <- parseNP Objective np1
+  obj2 <- parseNP Objective np2
+  obj3 <- parseNP Objective np3
+  pure
+    ( num
+    , adjs
+    , noun
+    , addRelClause rel (RelPrep prepTxt (CoordNP And obj1 (CoordNP And obj2 obj3)))
+    )
+parseN (List [Atom "PrepSeriesCN4", n, prep, np1, np2, np3, np4]) = do
+  (num, adjs, noun, rel) <- parseN n
+  prepTxt <- parsePrep prep
+  obj1 <- parseNP Objective np1
+  obj2 <- parseNP Objective np2
+  obj3 <- parseNP Objective np3
+  obj4 <- parseNP Objective np4
+  pure
+    ( num
+    , adjs
+    , noun
+    , addRelClause rel
+        (RelPrep prepTxt (CoordNP And obj1 (CoordNP And obj2 (CoordNP And obj3 obj4))))
+    )
 parseN (List [Atom "PrepQSCN", n, prep, qs]) = do
   (num, adjs, noun, rel) <- parseN n
   prepTxt <- parsePrep prep
@@ -521,6 +551,10 @@ parseAP (List [Atom "ModAP", ada, ap]) = do
   modifier <- parseAdA ada
   base <- parseAP ap
   pure (ModifiedAdj modifier base)
+parseAP (List [Atom "AdvAP", ap, adv]) = do
+  base <- parseAP ap
+  advPhrase <- parseAdv adv
+  pure (AdjWithAdv base advPhrase)
 parseAP (List [Atom "ConjAP", conj, ap1, ap2]) = do
   c <- parseConj conj
   left <- parseAP ap1
@@ -539,6 +573,10 @@ parsePostpositiveAP (List [Atom "ModAP", ada, ap]) = do
   modifier <- parseAdA ada
   base <- parsePostpositiveAP ap
   pure (ModifiedAdj modifier base)
+parsePostpositiveAP (List [Atom "AdvAP", ap, adv]) = do
+  base <- parsePostpositiveAP ap
+  advPhrase <- parseAdv adv
+  pure (AdjWithAdv base advPhrase)
 parsePostpositiveAP (List [Atom "ConjAP", conj, ap1, ap2]) = do
   c <- parseConj conj
   left <- parsePostpositiveAP ap1
@@ -550,6 +588,7 @@ flattenPrenominalAP ∷ AdjPhrase → Maybe [String]
 flattenPrenominalAP (BareAdj adj) = Just [adj]
 flattenPrenominalAP (ModifiedAdj modifier base) =
   (modifier :) <$> flattenPrenominalAP base
+flattenPrenominalAP (AdjWithAdv _ _) = Nothing
 flattenPrenominalAP (CoordAdj And left right) =
   (++) <$> flattenPrenominalAP left <*> flattenPrenominalAP right
 flattenPrenominalAP (CoordAdj Or left right) = do
@@ -557,13 +596,39 @@ flattenPrenominalAP (CoordAdj Or left right) = do
   rightTokens <- flattenPrenominalAP right
   pure (leftTokens ++ ["or"] ++ rightTokens)
 
-isAllowedPostpositiveAdj ∷ String → Bool
-isAllowedPostpositiveAdj adj =
-  map toLower adj `elem` ["whatsoever", "sacred", "profane", "authentic"]
-
 addRelClause ∷ Maybe RelClause → RelClause → Maybe RelClause
 addRelClause Nothing newRel = Just newRel
 addRelClause (Just rel) newRel = Just (RelChain rel newRel)
+
+isAllowedPostpositiveAdj ∷ String → Bool
+isAllowedPostpositiveAdj adj =
+  lowerAdj `elem` ["whatsoever", "sacred", "profane", "authentic", "threadbare"]
+    || any (`isSuffixOf` lowerAdj) ["ed", "en"]
+  where
+    lowerAdj = map toLower adj
+
+repairLeadNP ∷ NounPhrase → NounPhrase
+repairLeadNP (CoordNP And first rest)
+  | Just repaired <- absorbLeadCoordIntoPrep first rest =
+      repaired
+repairLeadNP np = np
+
+absorbLeadCoordIntoPrep ∷ NounPhrase → NounPhrase → Maybe NounPhrase
+absorbLeadCoordIntoPrep (CommonNoun detTxt adjs noun num (Just rel)) rest = do
+  rel' <- extendFinalRelPrep rel rest
+  pure (CommonNoun detTxt adjs noun num (Just rel'))
+absorbLeadCoordIntoPrep (PossessedNoun owner adjs noun num (Just rel)) rest = do
+  rel' <- extendFinalRelPrep rel rest
+  pure (PossessedNoun owner adjs noun num (Just rel'))
+absorbLeadCoordIntoPrep _ _ = Nothing
+
+extendFinalRelPrep ∷ RelClause → NounPhrase → Maybe RelClause
+extendFinalRelPrep (RelPrep prep obj) rest =
+  Just (RelPrep prep (CoordNP And obj rest))
+extendFinalRelPrep (RelChain left right) rest =
+  RelChain left <$> extendFinalRelPrep right rest
+extendFinalRelPrep _ _ =
+  Nothing
 
 parseAdA ∷ SExp → Maybe String
 parseAdA (Atom "much_AdA") = Just "much"
@@ -572,6 +637,7 @@ parseAdA (Atom "however_AdA") = Just "however"
 parseAdA (Atom "slightly_AdA") = Just "slightly"
 parseAdA (Atom "less_AdA") = Just "less"
 parseAdA (Atom "more_AdA") = Just "more"
+parseAdA (Atom "mockingly_AdA") = Just "mockingly"
 parseAdA (Atom "too_AdA") = Just "too"
 parseAdA (Atom "not_AdA") = Just "not"
 parseAdA (Atom "altogether_AdA") = Just "altogether"
@@ -663,6 +729,12 @@ translateSentence (Sentence t p subj vp) =
     , renderNP subj
     , renderVP vp
     ]
+translateSentence (SingleWord word) = word
+translateSentence (SentenceWithLeadNP np sentence) =
+  unwords
+    [ renderNP np
+    , translateSentence sentence
+    ]
 translateSentence (SentenceWithAdv sentence adv) =
   unwords
     [ renderAdv adv
@@ -706,11 +778,26 @@ translateFallback input =
   unwords (map fantasyToken (words input))
 
 parseNP ∷ PronounCase → SExp → Maybe NounPhrase
+parseNP cas (List [Atom "ApposNP", headNP, appositiveNP]) = do
+  headPhrase <- parseNP cas headNP
+  appositivePhrase <- parseNP cas appositiveNP
+  pure (AppositiveNP headPhrase appositivePhrase)
 parseNP cas (List [Atom "ConjNP", conj, np1, np2]) = do
   c <- parseConj conj
   n1 <- parseNP cas np1
   n2 <- parseNP cas np2
   pure (CoordNP c n1 n2)
+parseNP cas (List [Atom "SeriesNP3", np1, np2, np3]) = do
+  n1 <- parseNP cas np1
+  n2 <- parseNP cas np2
+  n3 <- parseNP cas np3
+  pure (CoordNP And n1 (CoordNP And n2 n3))
+parseNP cas (List [Atom "SeriesNP4", np1, np2, np3, np4]) = do
+  n1 <- parseNP cas np1
+  n2 <- parseNP cas np2
+  n3 <- parseNP cas np3
+  n4 <- parseNP cas np4
+  pure (CoordNP And n1 (CoordNP And n2 (CoordNP And n3 n4)))
 parseNP _ (List [Atom "PossSgNP", possessor, n]) = do
   owner <- parseNP Subjective possessor
   (nounNum, adjs, noun, rel) <- parseN n
@@ -733,6 +820,12 @@ parseNP _ (List [Atom "DetCN", det, n]) = do
       , determinerNounCountabilityOk detText noun ->
           pure (CommonNoun (Just detText) adjs noun finalNum rel)
       | otherwise -> Nothing
+parseNP _ (List [Atom "AllTheAdjCN", a, n]) = do
+  adj <- parseA a
+  (nounNum, adjs, noun, rel) <- parseN n
+  if quantifierAdjNounAgreementOk nounNum adjs noun
+    then pure (CommonNoun (Just "all the") (adj : adjs) noun nounNum rel)
+    else Nothing
 parseNP _ (List [Atom "UseN", n]) = do
   (num, adjs, noun, rel) <- parseN n
   if quantifierAdjNounAgreementOk num adjs noun
@@ -999,6 +1092,8 @@ isCountNounHint noun =
     ]
 
 renderNP ∷ NounPhrase → String
+renderNP (AppositiveNP headNP appositiveNP) =
+  renderNP headNP <> ", " <> renderNP appositiveNP
 renderNP (CoordNP c a b) =
   unwords [renderNP a, renderConj c, renderNP b]
 renderNP (ProperNoun s) = fantasyToken s
@@ -1048,6 +1143,8 @@ renderAdjPhrase ∷ AdjPhrase → String
 renderAdjPhrase (BareAdj adj) = fantasyToken adj
 renderAdjPhrase (ModifiedAdj modifier adj) =
   unwords [fantasyToken modifier, renderAdjPhrase adj]
+renderAdjPhrase (AdjWithAdv adj adv) =
+  unwords [renderAdjPhrase adj, renderAdv adv]
 renderAdjPhrase (CoordAdj c a b) =
   unwords [renderAdjPhrase a, renderConj c, renderAdjPhrase b]
 
@@ -1087,6 +1184,7 @@ renderConj Or  = fantasyToken "or"
 
 isThirdSingular ∷ NounPhrase → Bool
 isThirdSingular (CoordNP _ _ _) = False
+isThirdSingular (AppositiveNP headNP _) = isThirdSingular headNP
 isThirdSingular (ProperNoun _) = True
 isThirdSingular (Demonstrative _ Singular) = True
 isThirdSingular (PossessedNoun _ _ _ Singular _) = True
@@ -1225,6 +1323,10 @@ validateExpr expr = do
 sentenceStructureOk ∷ Sentence → Bool
 sentenceStructureOk (Sentence _ _ subj vp) =
   nounPhraseStructureOk subj && verbPhraseStructureOk vp
+sentenceStructureOk (SingleWord _) =
+  True
+sentenceStructureOk (SentenceWithLeadNP np sentence) =
+  nounPhraseStructureOk np && sentenceStructureOk sentence
 sentenceStructureOk (SentenceWithAdv sentence adv) =
   sentenceStructureOk sentence && advPhraseStructureOk adv
 sentenceStructureOk (Vocative sentence np) =
@@ -1287,12 +1389,16 @@ adjPhraseStructureOk ∷ AdjPhrase → Bool
 adjPhraseStructureOk (BareAdj adj) = not (null adj)
 adjPhraseStructureOk (ModifiedAdj modifier adj) =
   not (null modifier) && adjPhraseStructureOk adj
+adjPhraseStructureOk (AdjWithAdv adj adv) =
+  adjPhraseStructureOk adj && advPhraseStructureOk adv
 adjPhraseStructureOk (CoordAdj _ a b) =
   adjPhraseStructureOk a && adjPhraseStructureOk b
 
 nounPhraseStructureOk ∷ NounPhrase → Bool
 nounPhraseStructureOk (ProperNoun _) = True
 nounPhraseStructureOk (Demonstrative _ _) = True
+nounPhraseStructureOk (AppositiveNP headNP appositiveNP) =
+  nounPhraseStructureOk headNP && nounPhraseStructureOk appositiveNP
 nounPhraseStructureOk (Pronoun _ _ _) = True
 nounPhraseStructureOk (CommonNoun _ adjs noun _ relClause) =
   commonNounHeadAllowed adjs noun && maybe True relClauseStructureOk relClause
@@ -1322,6 +1428,8 @@ objectNounPhraseOk np =
 isIllFormedBareSingularObject ∷ NounPhrase → Bool
 isIllFormedBareSingularObject (CommonNoun Nothing _ noun Singular Nothing) =
   not (bareSingularObjectNounAllowed noun)
+isIllFormedBareSingularObject (AppositiveNP headNP appositiveNP) =
+  isIllFormedBareSingularObject headNP || isIllFormedBareSingularObject appositiveNP
 isIllFormedBareSingularObject (CoordNP _ a b) =
   isIllFormedBareSingularObject a || isIllFormedBareSingularObject b
 isIllFormedBareSingularObject _ = False

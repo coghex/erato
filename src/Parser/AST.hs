@@ -41,12 +41,14 @@ data Conj = And | Or
 data AdjPhrase
   = BareAdj String
   | ModifiedAdj String AdjPhrase
+  | AdjWithAdv AdjPhrase AdvPhrase
   | CoordAdj Conj AdjPhrase AdjPhrase
   deriving (Eq, Show)
 
 data NounPhrase
   = ProperNoun String
   | Demonstrative String Number
+  | AppositiveNP NounPhrase NounPhrase
   | Pronoun
       { person      ∷ Person
       , number      ∷ Number
@@ -121,6 +123,8 @@ data Sentence
     , subject  ∷ NounPhrase
     , verb     ∷ VerbPhrase
     }
+  | SingleWord String
+  | SentenceWithLeadNP NounPhrase Sentence
   | SentenceWithAdv Sentence AdvPhrase
   | Vocative Sentence NounPhrase
   | Question Tense Polarity NounPhrase VerbPhrase

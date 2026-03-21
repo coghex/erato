@@ -17,6 +17,19 @@ renderSentenceTree (Sentence t p subj vp) =
     , "\\- verb"
     , renderVP "   " vp
     ]
+renderSentenceTree (SingleWord word) =
+  unlines
+    [ "SingleWord"
+    , "\\- " <> word
+    ]
+renderSentenceTree (SentenceWithLeadNP np sentence) =
+  unlines
+    [ "SentenceWithLeadNP"
+    , "|- lead"
+    , renderNP "   " np
+    , "\\- sentence"
+    , indentBlock "   " (renderSentenceTree sentence)
+    ]
 renderSentenceTree (SentenceWithAdv sentence adv) =
   unlines
     [ "SentenceWithAdv"
@@ -79,6 +92,14 @@ renderNP indent np =
         [ indent <> "|- Demonstrative"
         , indent <> "|- form: " <> form
         , indent <> "\\- number: " <> show num
+        ]
+    AppositiveNP headNP appositiveNP ->
+      unlines
+        [ indent <> "|- AppositiveNP"
+        , indent <> "|- head"
+        , renderNP (indent <> "   ") headNP
+        , indent <> "\\- appositive"
+        , renderNP (indent <> "   ") appositiveNP
         ]
     Pronoun p n c ->
       unlines
@@ -245,6 +266,12 @@ renderAdjPhrase indent adjPhrase =
         [ indent <> "|- ModifiedAdj"
         , indent <> "|- modifier: " <> modifier
         , renderAdjPhrase (indent <> "   ") base
+        ]
+    AdjWithAdv adj adv ->
+      unlines
+        [ indent <> "|- AdjWithAdv"
+        , renderAdjPhrase (indent <> "   ") adj
+        , indent <> "\\- adv: " <> show adv
         ]
     CoordAdj c a b ->
       unlines

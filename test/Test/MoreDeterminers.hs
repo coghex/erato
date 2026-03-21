@@ -108,6 +108,22 @@ spec grammars = describe "More determiners" $ do
         (CommonNoun (Just "no") [] "dog" Plural Nothing)
         (Intransitive "run")
 
+  it "parses all the with nested of-phrases inside a PP" $ do
+    let exprs = parseControlled grammars "he dusted the handkerchief with all the gay flags of all the known nations of the world"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (VPWithAdv
+          (Transitive "dust"
+            (CommonNoun (Just "the") [] "handkerchief" Singular Nothing))
+          (PrepPhrase "with"
+            (CommonNoun (Just "all the") ["gay"] "flag" Plural
+              (Just (RelPrep "of"
+                (CommonNoun (Just "all the") ["known"] "nation" Plural
+                  (Just (RelPrep "of"
+                    (CommonNoun (Just "the") [] "world" Singular Nothing)))))))))
+
   it "parses this: this dog runs" $ do
     let exprs = parseControlled grammars "this dog runs"
     shouldParse exprs

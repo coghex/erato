@@ -2,9 +2,9 @@
 
 module Main where
 
-import Control.Parallel.Strategies (parList, rseq, withStrategy)
+import Control.Parallel.Strategies (parBuffer, rseq, withStrategy)
 import Data.Char (isAlpha, isAscii, isDigit, isLower, isSpace, isUpper, toLower, toUpper)
-import Data.List (foldl', isInfixOf, isPrefixOf, nub, sort, sortOn)
+import Data.List (isInfixOf, isPrefixOf, nub, sort, sortOn)
 import Data.Maybe (mapMaybe)
 import System.Directory (doesDirectoryExist, doesFileExist, getFileSize, listDirectory)
 import System.Environment (getArgs)
@@ -66,6 +66,13 @@ data CorpusStats = CorpusStats
   , statFailures    ∷ [FailureExample]
   }
 
+data CorpusRunSummary = CorpusRunSummary
+  { summaryStats        ∷ CorpusStats
+  , summarySawSentences ∷ Bool
+  , summaryMaxHit       ∷ Bool
+  , summaryStopHit      ∷ Bool
+  }
+
 defaultMaxInputBytes ∷ Integer
 defaultMaxInputBytes = 5 * 1024 * 1024
 
@@ -124,18 +131,17 @@ runCorpus cfg = do
 
   enforceInputSizeLimit cfg files
   grammars <- loadGrammars "Grammar/EratoAbs.pgf" "Grammar/AllEngAbs.pgf"
-  corpusSentences <- concat <$> mapM loadCorpusFile files
-  if null corpusSentences
+  summary <- processCorpusFiles cfg grammars files
+  let stats = summaryStats summary
+  if not (summarySawSentences summary)
     then do
       putStrLn "[error] no sentence-like content found in provided files."
       exitFailure
     else pure ()
 
-  let candidateSentences = applyMaxSentences (cfgMaxSentences cfg) corpusSentences
-      stats = processSentences cfg grammars (emptyStats (cfgShowFailures cfg)) candidateSentences
-      parsedCount = statControlled stats + statFallback stats + statAutoPass stats
-      maxHit = maybe False (\n → length corpusSentences > n) (cfgMaxSentences cfg)
-      stopHit = maybe False (\n → statUnparsed stats >= n && statTotal stats < length candidateSentences) (cfgStopAfterUnparsed cfg)
+  let parsedCount = statControlled stats + statFallback stats + statAutoPass stats
+      maxHit = summaryMaxHit summary
+      stopHit = summaryStopHit summary
 
   putStrLn ("Corpus files: " <> show (length files))
   putStrLn ("Sentences:    " <> show (statTotal stats))
@@ -154,6 +160,56 @@ runCorpus cfg = do
 
   printFailureExamples stats
   enforceThresholds cfg stats
+
+processCorpusFiles ∷ CorpusConfig → GrammarBundle → [FilePath] → IO CorpusRunSummary
+processCorpusFiles cfg grammars files =
+  go (emptyStats (cfgShowFailures cfg)) False False files (cfgMaxSentences cfg)
+  where
+    go stats sawSentences maxHit remainingFiles remainingBudget
+      | reachedUnparsedLimit cfg stats =
+          pure (CorpusRunSummary stats sawSentences maxHit True)
+      | budgetExhausted remainingBudget =
+          pure (CorpusRunSummary stats sawSentences True False)
+      | otherwise =
+          case remainingFiles of
+            [] ->
+              pure (CorpusRunSummary stats sawSentences maxHit False)
+            file : rest -> do
+              sentences <- loadCorpusFile file
+              let sawSentences' = sawSentences || not (null sentences)
+                  (sentencesToProcess, fileBudgetHit, remainingBudget') =
+                    takeSentenceBudget remainingBudget sentences
+                  stats' = processSentences cfg grammars stats sentencesToProcess
+                  maxHit' = maxHit || fileBudgetHit
+              if reachedUnparsedLimit cfg stats'
+                then pure (CorpusRunSummary stats' sawSentences' maxHit' True)
+                else
+                  case remainingBudget' of
+                    Just 0
+                      | not fileBudgetHit && null rest ->
+                          pure (CorpusRunSummary stats' sawSentences' maxHit' False)
+                    Just 0
+                      | not fileBudgetHit && not (null rest) ->
+                          pure (CorpusRunSummary stats' sawSentences' True False)
+                    _ ->
+                      if fileBudgetHit
+                        then pure (CorpusRunSummary stats' sawSentences' True False)
+                        else go stats' sawSentences' maxHit' rest remainingBudget'
+
+budgetExhausted ∷ Maybe Int → Bool
+budgetExhausted (Just n) = n <= 0
+budgetExhausted Nothing = False
+
+takeSentenceBudget ∷ Maybe Int → [CorpusSentence] → ([CorpusSentence], Bool, Maybe Int)
+takeSentenceBudget Nothing sentences =
+  (sentences, False, Nothing)
+takeSentenceBudget (Just limit) sentences =
+  go limit [] sentences
+  where
+    go 0 acc rest = (reverse acc, not (null rest), Just 0)
+    go n acc [] = (reverse acc, False, Just n)
+    go n acc (sentence : rest) =
+      go (n - 1) (sentence : acc) rest
 
 resolveInputs ∷ CorpusConfig → IO [FilePath]
 resolveInputs cfg = do
@@ -415,10 +471,6 @@ isSentenceCandidate ∷ String → Bool
 isSentenceCandidate sentence =
   length sentence > 1 && any isAlpha sentence
 
-applyMaxSentences ∷ Maybe Int → [CorpusSentence] → [CorpusSentence]
-applyMaxSentences Nothing sentences = sentences
-applyMaxSentences (Just n) sentences = take n sentences
-
 processSentences ∷ CorpusConfig → GrammarBundle → CorpusStats → [CorpusSentence] → CorpusStats
 processSentences cfg grammars
   | cfgJobs cfg <= 1 = goSequential
@@ -435,19 +487,21 @@ processSentences cfg grammars
     goParallel stats sentences
       | reachedUnparsedLimit cfg stats = stats
       | otherwise =
-          let (batch, rest) = splitAt (cfgJobs cfg) sentences
-              classifiedBatch =
+          let classifiedStream =
                 withStrategy
-                  (parList rseq)
-                  (map (\sentence -> (sentence, classifySentence cfg grammars (sentenceText sentence))) batch)
-              next = foldClassifiedBatch stats classifiedBatch
-          in goParallel next rest
+                  (parBuffer (cfgJobs cfg) rseq)
+                  (map classifySentenceStrict sentences)
+          in foldClassifiedBatch stats classifiedStream
 
     foldClassifiedBatch stats [] = stats
     foldClassifiedBatch stats _
       | reachedUnparsedLimit cfg stats = stats
     foldClassifiedBatch stats ((sentence, outcome) : rest) =
       foldClassifiedBatch (accumulateClassifiedOutcome stats sentence outcome) rest
+
+    classifySentenceStrict sentence =
+      let outcome = classifySentence cfg grammars (sentenceText sentence)
+      in outcome `seq` (sentence, outcome)
 
 reachedUnparsedLimit ∷ CorpusConfig → CorpusStats → Bool
 reachedUnparsedLimit cfg stats =
@@ -503,46 +557,76 @@ accumulateClassifiedOutcome stats sentence outcome =
         }
 
 classifySentence ∷ CorpusConfig → GrammarBundle → String → ParseOutcome
-classifySentence cfg bundle text
-  | exceedsSentenceCharLimit cfg text = RejectedTooLong
-  | isForeignDominantSentence text = DroppedJunk
-  | isForeignShortFragmentSentence text = AutoPassNameFragment
-  | isUnbalancedQuoteFragmentSentence text = AutoPassNameFragment
-  | isSingleWordSentence text = AutoPassSingleWord
-  | isPrepositionalNameFragmentSentence text = AutoPassNameFragment
-  | isDanglingPrepositionalFragmentSentence text = AutoPassNameFragment
-  | isComparativeMetaFragmentSentence text = AutoPassNameFragment
-  | isDirectionalWhFragmentSentence text = AutoPassNameFragment
-  | isNauticalBearingFragmentSentence text = AutoPassNameFragment
-  | isNauticalHailFragmentSentence text = AutoPassNameFragment
-  | isNauticalDistanceFragmentSentence text = AutoPassNameFragment
-  | isStormOathFragmentSentence text = AutoPassNameFragment
-  | isSoAdjectiveFragmentSentence text = AutoPassNameFragment
-  | isSuchNominalFragmentSentence text = AutoPassNameFragment
-  | isEvenNominalFragmentSentence text = AutoPassNameFragment
-  | isNominalEnoughToFragmentSentence text = AutoPassNameFragment
-  | isShortVocativeInterjectionSentence text = AutoPassNameFragment
-  | isShortDiscourseRepeatFragmentSentence text = AutoPassNameFragment
-  | isEllipticalWhQuestionSentence text = AutoPassNameFragment
-  | isScenicCatalogFragmentSentence text = AutoPassNameFragment
-  | isParallelSomeParticipleFragmentSentence text = AutoPassNameFragment
-  | isHypotheticalSayFragmentSentence text = AutoPassNameFragment
-  | isShortWhoAintFragmentSentence text = AutoPassNameFragment
-  | isNameFragmentSentence text = AutoPassNameFragment
-  | isDanglingNameConnectorFragmentSentence text = AutoPassNameFragment
-  | isBibliographicFragmentSentence text = AutoPassNameFragment
-  | isBibliographicTitleFragmentSentence text = AutoPassNameFragment
-  | isConnectorTitleFragmentSentence text = AutoPassNameFragment
-  | isDanglingBibliographicLeadFragmentSentence text = AutoPassNameFragment
-  | isBibliographicBylineRoleFragmentSentence text = AutoPassNameFragment
-  | isInfinitiveGlossSentence text = AutoPassGlossFragment
-  | otherwise =
-      case firstParsedBestFirstOutcome bundle directRewriteCandidates 2 (fastRewriteCandidates text) of
+classifySentence cfg bundle text =
+  case classifyImmediateOutcome cfg text of
+    Just outcome -> outcome
+    Nothing ->
+      case firstParsedBestFirstOutcome bundle directFastRewriteCandidates 1 (fastRewriteSeeds text) of
         Just outcome -> outcome
         Nothing ->
-          case firstParsedOutcome bundle (text : corpusRewriteCandidates text) of
+          case parseOutcomeForText bundle text of
             Just outcome -> outcome
-            Nothing -> Unparsed
+            Nothing ->
+              case firstParsedBestFirstOutcome bundle directRewriteCandidates 3 (initialCorpusRewriteSeeds text) of
+                Just outcome -> outcome
+                Nothing -> Unparsed
+
+type SentenceHeuristic = String → Bool
+
+classifyImmediateOutcome ∷ CorpusConfig → String → Maybe ParseOutcome
+classifyImmediateOutcome cfg text
+  | exceedsSentenceCharLimit cfg text = Just RejectedTooLong
+  | isForeignDominantSentence text = Just DroppedJunk
+  | matchesSentenceHeuristic preSingleWordNameFragmentHeuristics text = Just AutoPassNameFragment
+  | isSingleWordSentence text = Just AutoPassSingleWord
+  | matchesSentenceHeuristic postSingleWordNameFragmentHeuristics text = Just AutoPassNameFragment
+  | matchesSentenceHeuristic glossFragmentHeuristics text = Just AutoPassGlossFragment
+  | otherwise = Nothing
+
+matchesSentenceHeuristic ∷ [SentenceHeuristic] → String → Bool
+matchesSentenceHeuristic heuristics text =
+  any ($ text) heuristics
+
+preSingleWordNameFragmentHeuristics ∷ [SentenceHeuristic]
+preSingleWordNameFragmentHeuristics =
+  [ isForeignShortFragmentSentence
+  , isUnbalancedQuoteFragmentSentence
+  ]
+
+postSingleWordNameFragmentHeuristics ∷ [SentenceHeuristic]
+postSingleWordNameFragmentHeuristics =
+  [ isPrepositionalNameFragmentSentence
+  , isDanglingPrepositionalFragmentSentence
+  , isComparativeMetaFragmentSentence
+  , isDirectionalWhFragmentSentence
+  , isNauticalBearingFragmentSentence
+  , isNauticalHailFragmentSentence
+  , isNauticalDistanceFragmentSentence
+  , isStormOathFragmentSentence
+  , isSoAdjectiveFragmentSentence
+  , isSuchNominalFragmentSentence
+  , isEvenNominalFragmentSentence
+  , isNominalEnoughToFragmentSentence
+  , isShortVocativeInterjectionSentence
+  , isShortDiscourseRepeatFragmentSentence
+  , isEllipticalWhQuestionSentence
+  , isScenicCatalogFragmentSentence
+  , isParallelSomeParticipleFragmentSentence
+  , isHypotheticalSayFragmentSentence
+  , isShortWhoAintFragmentSentence
+  , isNameFragmentSentence
+  , isDanglingNameConnectorFragmentSentence
+  , isBibliographicFragmentSentence
+  , isBibliographicTitleFragmentSentence
+  , isConnectorTitleFragmentSentence
+  , isDanglingBibliographicLeadFragmentSentence
+  , isBibliographicBylineRoleFragmentSentence
+  ]
+
+glossFragmentHeuristics ∷ [SentenceHeuristic]
+glossFragmentHeuristics =
+  [ isInfinitiveGlossSentence
+  ]
 
 exceedsSentenceCharLimit ∷ CorpusConfig → String → Bool
 exceedsSentenceCharLimit cfg text =
@@ -587,404 +671,466 @@ prioritizeCandidates ∷ [(Int, String)] → [(Int, String)]
 prioritizeCandidates =
   sortOn (\(depth, candidate) → (length candidate, depth, candidate))
 
+prioritizeTextCandidates ∷ [String] → [String]
+prioritizeTextCandidates =
+  map snd . prioritizeCandidates . map (\candidate → (0, candidate)) . nub
+
 parseOutcomeForText ∷ GrammarBundle → String → Maybe ParseOutcome
 parseOutcomeForText bundle text
   | Just _ <- parsePreferredControlledSentence bundle text = Just ControlledParsed
   | Just _ <- parsePreferredFallbackSentence bundle text = Just FallbackParsed
   | otherwise = Nothing
 
-fastRewriteCandidates ∷ String → [String]
-fastRewriteCandidates text =
-  sortOn length (filter (/= text) (applyFastRewriteRounds 2 [text]))
+type RewriteGenerator = String → [String]
 
-applyFastRewriteRounds ∷ Int → [String] → [String]
-applyFastRewriteRounds rounds variants
-  | rounds <= 0 = nub variants
-  | otherwise =
-      let expanded = nub (variants ++ concatMap directFastRewriteCandidates variants)
-      in applyFastRewriteRounds (rounds - 1) expanded
+collectRewriteCandidates ∷ [RewriteGenerator] → String → [String]
+collectRewriteCandidates generators text =
+  concatMap ($ text) generators
+
+fastRewriteSeeds ∷ String → [String]
+fastRewriteSeeds text =
+  prioritizeTextCandidates
+    [ candidate
+    | candidate <- directFastRewriteCandidates text
+    , candidate /= text
+    ]
 
 directFastRewriteCandidates ∷ String → [String]
-directFastRewriteCandidates text =
-  quotedShortExchangeCandidates text
-    ++ breakingUpOfCandidates text
-    ++ yieldedToPrevailCandidates text
-    ++ mixedWithTheseBrokenCandidates text
-    ++ flungRunAwayWithCandidates text
-    ++ crossingPublicRoomCandidates text
-    ++ sideStoodRaritiesCandidates text
-    ++ whatPuzzledCoreCandidates text
-    ++ seemedThisColonCandidates text
-    ++ periodParticipialLeadInCandidates text
-    ++ everAndAnonLeadInCandidates text
-    ++ alasParentheticalCandidates text
-    ++ dartObjectThroughCandidates text
-    ++ foundReflexiveInCandidates text
-    ++ foundYourselfWithTailCandidates text
-    ++ participialLeadInCandidates text
-    ++ commaParentheticalCandidates text
-    ++ aggressiveClauseCoreCandidates text
-    ++ bySettingUpTailCandidates text
-    ++ conclusionThatCoreCandidates text
-    ++ thatAlmostThoughtCoreCandidates text
-    ++ altogetherAdverbDropCandidates text
-    ++ catalogueAnaphoraCandidates text
-    ++ copulaLyAdverbDropCandidates text
-    ++ attendedWithSmellCandidates text
-    ++ standInDreadCandidates text
-    ++ allOverWithCandidates text
-    ++ arrayOfCandidates text
-    ++ resemblingTailCandidates text
-    ++ foundImbeddedCandidates text
-    ++ travelledFoundCoreCandidates text
-    ++ didKillInversionCandidates text
-    ++ betweenRangeTailCandidates text
-    ++ scenicInversionChainCandidates text
+directFastRewriteCandidates =
+  collectRewriteCandidates fastRewriteGenerators
 
-corpusRewriteCandidates ∷ String → [String]
-corpusRewriteCandidates text =
-  filter (/= text) (applyRewriteRounds 3 seedVariants)
-  where
-    semicolonVariants = semicolonClauseCandidates text
-    seedVariants =
-      nub
-        ( text
-            : casingNormalizedCandidate text
-           ++ participialBylineCandidate text
-           ++ semicolonVariants
-           ++ concatMap casingNormalizedCandidate semicolonVariants
-           ++ concatMap directRewriteCandidates semicolonVariants
-        )
+fastRewriteGenerators ∷ [RewriteGenerator]
+fastRewriteGenerators =
+  fastStructuralRewriteGenerators
+    ++ fastLeadInRewriteGenerators
+    ++ fastTailSalvageRewriteGenerators
 
-applyRewriteRounds ∷ Int → [String] → [String]
-applyRewriteRounds rounds variants
-  | rounds <= 0 = nub variants
-  | otherwise =
-      let expanded = nub (variants ++ concatMap directRewriteCandidates variants)
-      in applyRewriteRounds (rounds - 1) expanded
+fastStructuralRewriteGenerators ∷ [RewriteGenerator]
+fastStructuralRewriteGenerators =
+  [ quotedShortExchangeCandidates
+  , breakingUpOfCandidates
+  , yieldedToPrevailCandidates
+  , mixedWithTheseBrokenCandidates
+  , flungRunAwayWithCandidates
+  , crossingPublicRoomCandidates
+  , sideStoodRaritiesCandidates
+  , whatPuzzledCoreCandidates
+  , seemedThisColonCandidates
+  ]
+
+fastLeadInRewriteGenerators ∷ [RewriteGenerator]
+fastLeadInRewriteGenerators =
+  [ periodParticipialLeadInCandidates
+  , everAndAnonLeadInCandidates
+  , alasParentheticalCandidates
+  , dartObjectThroughCandidates
+  , foundReflexiveInCandidates
+  , foundYourselfWithTailCandidates
+  , participialLeadInCandidates
+  , commaParentheticalCandidates
+  , aggressiveClauseCoreCandidates
+  , bySettingUpTailCandidates
+  , conclusionThatCoreCandidates
+  , thatAlmostThoughtCoreCandidates
+  ]
+
+fastTailSalvageRewriteGenerators ∷ [RewriteGenerator]
+fastTailSalvageRewriteGenerators =
+  [ altogetherAdverbDropCandidates
+  , catalogueAnaphoraCandidates
+  , copulaLyAdverbDropCandidates
+  , attendedWithSmellCandidates
+  , standInDreadCandidates
+  , allOverWithCandidates
+  , arrayOfCandidates
+  , resemblingTailCandidates
+  , foundImbeddedCandidates
+  , travelledFoundCoreCandidates
+  , didKillInversionCandidates
+  , betweenRangeTailCandidates
+  , scenicInversionChainCandidates
+  ]
+
+initialCorpusRewriteSeeds ∷ String → [String]
+initialCorpusRewriteSeeds text =
+  prioritizeTextCandidates
+    [ candidate
+    | candidate <- initialCorpusRewriteSeedCandidates text
+    , candidate /= text
+    ]
+
+initialCorpusRewriteSeedCandidates ∷ String → [String]
+initialCorpusRewriteSeedCandidates text =
+  let semicolonVariants = semicolonClauseCandidates text
+  in collectRewriteCandidates
+       [ casingNormalizedCandidate
+       , participialBylineCandidate
+       ]
+       text
+       ++ semicolonVariants
+       ++ concatMap casingNormalizedCandidate semicolonVariants
 
 directRewriteCandidates ∷ String → [String]
-directRewriteCandidates text =
-  titleCompoundCandidates text
-    ++ properNameSpanCandidates text
-    ++ definiteArticleNameDropCandidates text
-    ++ lexiconPluralCandidates text
-    ++ dialectSpellingCandidates text
-    ++ contractedCopulaCandidates text
-    ++ conclusionThatCoreCandidates text
-    ++ thatAlmostThoughtCoreCandidates text
-    ++ breakingUpOfCandidates text
-    ++ yieldedToPrevailCandidates text
-    ++ mixedWithTheseBrokenCandidates text
-    ++ flungRunAwayWithCandidates text
-    ++ crossingPublicRoomCandidates text
-    ++ sideStoodRaritiesCandidates text
-    ++ whatPuzzledCoreCandidates text
-    ++ seemedThisColonCandidates text
-    ++ periodParticipialLeadInCandidates text
-    ++ everAndAnonLeadInCandidates text
-    ++ alasParentheticalCandidates text
-    ++ dartObjectThroughCandidates text
-    ++ participialLeadInCandidates text
-    ++ foundReflexiveInCandidates text
-    ++ foundYourselfWithTailCandidates text
-    ++ quotedShortExchangeCandidates text
-    ++ altogetherAdverbDropCandidates text
-    ++ embeddedQuoteDropCandidates text
-    ++ parentheticalDropCandidates text
-    ++ notOnlyButAlsoCandidates text
-    ++ inPossessingTailCandidates text
-    ++ betterArmedComparativeCandidates text
-    ++ populationExistentialCandidates text
-    ++ numericRangeLeadInCandidates text
-    ++ progressiveEverCandidates text
-    ++ coordinatingLeadInCandidates text
-    ++ letUsImperativeCandidates text
-    ++ letPronounImperativeCandidates text
-    ++ beItParentheticalCandidates text
-    ++ downFrontingCandidates text
-    ++ descriptiveCommaTailCandidates text
-    ++ demonstrativeSubjectCandidates text
-    ++ towardsPrepCandidates text
-    ++ uponPrepCandidates text
-    ++ perfectComeCandidates text
-    ++ amongWhichCoreCandidates text
-    ++ amongWhichTailCandidates text
-    ++ trailingThatAreCandidates text
-    ++ superlativeCoordToManyCandidates text
-    ++ amongLeadInCandidates text
-    ++ comparativeAsLeadInCandidates text
-    ++ ofSizeCopulaCandidates text
-    ++ forLeadInCandidates text
-    ++ forFiniteClauseTailCandidates text
-    ++ forExistentialTailCandidates text
-    ++ reportingLeadInCandidates text
-    ++ stackedLeadInCandidates text
-    ++ frontedPackagingLeadInCandidates text
-    ++ predicativeThoughtLeadInCandidates text
-    ++ speechTagInversionCandidates text
-    ++ quotedAttributionParentheticalCandidates text
-    ++ quotedClauseAfterAttributionCandidates text
-    ++ periodClauseTailCandidates text
-    ++ reportedThatClauseCandidates text
-    ++ reportingThatClauseCandidates text
-    ++ relatedThatClauseCandidates text
-    ++ subjectItselfDropCandidates text
-    ++ reflexiveObjectCandidates text
-    ++ reflexiveSubjectCandidates text
-    ++ windLeadInTailCandidates text
-    ++ calledNameTailCandidates text
-    ++ colloquialAppositiveTailCandidates text
-    ++ parentheticalWhenClauseCandidates text
-    ++ inOrderInfinitiveParentheticalCandidates text
-    ++ thoughClauseParentheticalCandidates text
-    ++ postWhenClauseCandidates text
-    ++ temporalLeadInCandidates text
-    ++ stackedPrepositionalLeadInCandidates text
-    ++ sometimesLeadInCandidates text
-    ++ emotionalWithLeadInCandidates text
-    ++ annoYearTailCandidates text
-    ++ inPossessiveWayLeadInCandidates text
-    ++ alsoAdverbDropCandidates text
-    ++ veryLikeFragmentCandidates text
-    ++ likeAsClauseCoreCandidates text
-    ++ insomuchThatTailCandidates text
-    ++ exceedingDegreeCandidates text
-    ++ thrownOutOfCandidates text
-    ++ atAStrokeCandidates text
-    ++ amountedMeasureCandidates text
-    ++ extractedOutOfCandidates text
-    ++ whereasClauseCoreCandidates text
-    ++ whereasLeadInCandidates text
-    ++ whetherParentheticalCandidates text
-    ++ whetherClauseTailTrimCandidates text
-    ++ ifNotComparativeParentheticalCandidates text
-    ++ commaSubjectTailTrimCandidates text
-    ++ commaMainClauseAfterFragmentCandidates text
-    ++ subjectCommaBeforeFiniteVerbCandidates text
-    ++ andWithPhraseTailCandidates text
-    ++ withPhraseTailCandidates text
-    ++ andSometimesTailTrimCandidates text
-    ++ enterIntoCandidates text
-    ++ swallowedUpCandidates text
-    ++ immediateAdverbDropCandidates text
-    ++ catalogueAnaphoraCandidates text
-    ++ copulaLyAdverbDropCandidates text
-    ++ allOverWithCandidates text
-    ++ arrayOfCandidates text
-    ++ resemblingTailCandidates text
-    ++ foundImbeddedCandidates text
-    ++ travelledFoundCoreCandidates text
-    ++ doubtlessAdverbDropCandidates text
-    ++ frequentlyAdverbDropCandidates text
-    ++ attendedWithSmellCandidates text
-    ++ seldomAdverbDropCandidates text
-    ++ onceAdverbDropCandidates text
-    ++ justlyAdverbDropCandidates text
-    ++ suchDeterminerCandidates text
-    ++ allTheOtherDropCandidates text
-    ++ withoutGerundAdjunctCandidates text
-    ++ withoutNounAdjunctCandidates text
-    ++ asIfTailTrimCandidates text
-    ++ butClauseCoreCandidates text
-    ++ appearanceCopulaCandidates text
-    ++ provedCopulaCandidates text
-    ++ butThatIsTailCandidates text
-    ++ toSeeWhetherClauseCandidates text
-    ++ toTryWhetherClauseCandidates text
-    ++ frontedToPhraseLeadInCandidates text
-    ++ topicalizedPronounClauseCandidates text
-    ++ standInDreadCandidates text
-    ++ forFearTailCandidates text
-    ++ suchIsTailCandidates text
-    ++ thatClauseCoreCandidates text
-    ++ becauseClauseCoreCandidates text
-    ++ ifClauseCoreCandidates text
-    ++ thanPronounTailCandidates text
-    ++ sinceClauseTailCandidates text
-    ++ frontedWhatIsLeadInCandidates text
-    ++ describedByTailCandidates text
-    ++ ofWhoseCoreCandidates text
-    ++ ofWhichTailCandidates text
-    ++ descriptiveOfWhichTailCandidates text
-    ++ onBoardOfWhichParentheticalCandidates text
-    ++ onBoardOfWhichTailCandidates text
-    ++ goneBeforeRelativeCandidates text
-    ++ clearingOutCandidates text
-    ++ andMakingTailTrimCandidates text
-    ++ omittedSubjectAndTailCandidates text
-    ++ againstTailTrimCandidates text
-    ++ optativeWouldThatCandidates text
-    ++ clearOutPhrasalCandidates text
-    ++ signalOutEveryTimeCandidates text
-    ++ archaicPronounCandidates text
-    ++ archaicSecondPersonVerbCandidates text
-    ++ eyeDialectContractionCandidates text
-    ++ forEverCandidates text
-    ++ comparativeCorrelativeCandidates text
-    ++ byPrepPassiveInversionCandidates text
-    ++ frontedLieInfinitiveCandidates text
-    ++ frontedAdverbInversionCandidates text
-    ++ frontedPredicateCopulaInversionCandidates text
-    ++ didKillInversionCandidates text
-    ++ invertedAuxClauseCandidates text
-    ++ subjectThatVerbCandidates text
-    ++ causativeToInfinitiveCandidates text
-    ++ goPredicateCandidates text
-    ++ locativeRelativeTailCandidates text
-    ++ restrictiveRelativeTailCandidates text
-    ++ packagedRelativeTailCandidates text
-    ++ whereMainClauseCandidates text
-    ++ whichCommaTailTrimCandidates text
-    ++ shortCopularRelativeTailCandidates text
-    ++ createdHugestSwimCandidates text
-    ++ raiseUpImperativeCandidates text
-    ++ imperativeGiveItUpCandidates text
-    ++ namedCallImperativeCandidates text
-    ++ letUsCoordinatedTailCandidates text
-    ++ imperativeLeadTrimCandidates text
-    ++ packagedImperativeTailCandidates text
-    ++ valedictionImperativeCandidates text
-    ++ whoseTailTrimCandidates text
-    ++ touchingLeadInCandidates text
-    ++ asWellAsLeadInCandidates text
-    ++ copulaAdjectiveSimplificationCandidates text
-    ++ copulaMeasurePredicateCandidates text
-    ++ copulaSuperlativeNominalCandidates text
-    ++ copulaAnimalToGenericAdjCandidates text
-    ++ copulaPortionOfCandidates text
-    ++ propertyPredicateCandidates text
-    ++ ellipticCopulaNominalCandidates text
-    ++ copulaNominalToAdjectiveCandidates text
-    ++ copularAppositiveTailCandidates text
-    ++ thingOnEarthCopulaCandidates text
-    ++ thingCopulaToGenericAdjCandidates text
-    ++ copulaComplementProperNounCandidates text
-    ++ asAffordingTailCandidates text
-    ++ hasBeenParticipleListCandidates text
-    ++ asToPurposeTailCandidates text
-    ++ evidentialLeadInCandidates text
-    ++ discourseLeadInCandidates text
-    ++ yetMainClauseCandidates text
-    ++ politeWhQuestionLeadInCandidates text
-    ++ vocativeLeadInCandidates text
-    ++ whMatterQuestionCandidates text
-    ++ therePronounPredicateCandidates text
-    ++ therePointingCopulaCandidates text
-    ++ demonstrativePrepObjectCandidates text
-    ++ subjectLyAdverbCandidates text
-    ++ reportingParentheticalCandidates text
-    ++ questionCoreAfterAsidesCandidates text
-    ++ commaParentheticalCandidates text
-    ++ contrastiveHereThereTailCandidates text
-    ++ aggressiveClauseCoreCandidates text
-    ++ bySettingUpTailCandidates text
-    ++ etymologyGlossTailCandidates text
-    ++ appositiveOfChainCandidates text
-    ++ predicateTailTrimCandidates text
-    ++ dashClauseTailCandidates text
-    ++ trailingThereDropCandidates text
-    ++ tillClauseTailCandidates text
-    ++ notTillThatClauseCandidates text
-    ++ modalInterposedInPhraseCandidates text
-    ++ locativeAppearsClauseCandidates text
-    ++ andInGerundTailCandidates text
-    ++ andGerundCommaTailCandidates text
-    ++ andIntoAirTailCandidates text
-    ++ andFiniteTailCandidates text
-    ++ coordinatedClausePrefixCandidates text
-    ++ byGerundTailTrimCandidates text
-    ++ forCouldNeverTailCandidates text
-    ++ trailingForPhraseCandidates text
-    ++ memoryHavingTailCandidates text
-    ++ fewEverReturnCandidates text
-    ++ commaOneClauseTailCandidates text
-    ++ betweenRangeTailCandidates text
-    ++ purposeInfinitiveTailCandidates text
-    ++ terminalInOrderTailCandidates text
-    ++ emphaticItselfDropCandidates text
-    ++ wouldNotRatherCandidates text
-    ++ thoughtWouldTailCandidates text
-    ++ accountHighTimeCandidates text
-    ++ darwinObservationCandidates text
-    ++ engagedInContrastCandidates text
-    ++ pronominalAdverbCandidates text
-    ++ whatsoeverDropCandidates text
-    ++ atEasePredicateCandidates text
-    ++ sameFeelingsWithMeCandidates text
-    ++ rightAndLeftLeadInCandidates text
-    ++ hereLeadInCandidates text
-    ++ lookAtImperativeCandidates text
-    ++ locativeDirectionCandidates text
-    ++ nauticalWhereQuestionCandidates text
-    ++ wherePassiveCoreCandidates text
-    ++ commerceSurroundsTailCandidates text
-    ++ standInversionCandidates text
-    ++ whatDoTheyHereCandidates text
-    ++ postSubjectAllCandidates text
-    ++ hereComeCandidates text
-    ++ attractThemThitherCandidates text
-    ++ takeAnyPathCandidates text
-    ++ leadYouToWaterCandidates text
-    ++ tryExperimentCandidates text
-    ++ everyOneKnowsLeadInCandidates text
-    ++ copularPlaceAppositiveCandidates text
-    ++ hereIsExistentialCandidates text
-    ++ chiefElementQuestionCandidates text
-    ++ frontedWindsCandidates text
-    ++ scenicInversionChainCandidates text
-    ++ unlessClauseCoreCandidates text
-    ++ goVisitCandidates text
-    ++ waterThereDropCandidates text
-    ++ rhetoricalTravelQuestionCandidates text
-    ++ crazyToGoToSeaCandidates text
-    ++ mysticalVibrationCandidates text
-    ++ seaHolyCandidates text
-    ++ deityQuestionCandidates text
-    ++ meaningPredicateCandidates text
-    ++ purseNecessityCandidates text
-    ++ neverPassengerCandidates text
-    ++ asMuchAsICanDoCandidates text
-    ++ speakRespectfullyCandidates text
-    ++ seeMummiesCandidates text
-    ++ orderMeCandidates text
-    ++ unpleasantEnoughCandidates text
-    ++ tallestBoysAweCandidates text
-    ++ transitionKeenCandidates text
-    ++ wearsOffCandidates text
-    ++ seaCaptainOrdersCandidates text
-    ++ obeyCandidates text
-    ++ payingMeCandidates text
-    ++ passengersMustPayCandidates text
-    ++ differenceWorldCandidates text
-    ++ actOfPayingCandidates text
-    ++ receivesMoneyCandidates text
-    ++ perditionCandidates text
-    ++ tellMeThatCandidates text
-    ++ alwaysGoToSeaCandidates text
-    ++ commodoreAtmosphereCandidates text
-    ++ commonaltyLeadCandidates text
-    ++ fatesAnswerCandidates text
-    ++ briefInterludeCandidates text
-    ++ seeLittleCandidates text
-    ++ greatWhaleIdeaCandidates text
-    ++ perceiveHorrorCandidates text
-    ++ reduplicativeModifierCandidates text
-    ++ archaicVerbCandidates text
-    ++ gothicArchCandidates text
-    ++ laidOpenVerbCandidates text
-    ++ laidOpenMainClauseCandidates text
-    ++ passiveInfinitiveCandidates text
-    ++ complexClauseNormalizationCandidates text
-    ++ takeInHandCandidates text
-    ++ andToInfinitiveCandidates text
-    ++ byWhatNameCandidates text
-    ++ byNameClauseTrimCandidates text
-    ++ freeRelativeCandidates text
-    ++ frontedSubordinateCandidates text
-    ++ pruneLeavingParentheticalCandidates text
-    ++ participialTailTrimCandidates text
-    ++ amongParticipialTailCandidates text
+directRewriteCandidates =
+  collectRewriteCandidates fullRewriteGenerators
+
+fullRewriteGenerators ∷ [RewriteGenerator]
+fullRewriteGenerators =
+  fullLexicalRewriteGenerators
+    ++ fullStructuralCarryOverRewriteGenerators
+    ++ fullLeadInAndReportingRewriteGenerators
+    ++ fullAdverbAndTailRewriteGenerators
+    ++ fullArchaicAndRelativeRewriteGenerators
+    ++ fullCopulaDiscourseAndQuestionRewriteGenerators
+    ++ fullLateLiteraryRewriteGenerators
+
+fullLexicalRewriteGenerators ∷ [RewriteGenerator]
+fullLexicalRewriteGenerators =
+  [ titleCompoundCandidates
+  , properNameSpanCandidates
+  , definiteArticleNameDropCandidates
+  , lexiconPluralCandidates
+  , dialectSpellingCandidates
+  , contractedCopulaCandidates
+  ]
+
+fullStructuralCarryOverRewriteGenerators ∷ [RewriteGenerator]
+fullStructuralCarryOverRewriteGenerators =
+  [ conclusionThatCoreCandidates
+  , thatAlmostThoughtCoreCandidates
+  , breakingUpOfCandidates
+  , yieldedToPrevailCandidates
+  , mixedWithTheseBrokenCandidates
+  , flungRunAwayWithCandidates
+  , crossingPublicRoomCandidates
+  , sideStoodRaritiesCandidates
+  , whatPuzzledCoreCandidates
+  , seemedThisColonCandidates
+  , periodParticipialLeadInCandidates
+  , everAndAnonLeadInCandidates
+  , alasParentheticalCandidates
+  , dartObjectThroughCandidates
+  , participialLeadInCandidates
+  , foundReflexiveInCandidates
+  , foundYourselfWithTailCandidates
+  , quotedShortExchangeCandidates
+  ]
+
+fullLeadInAndReportingRewriteGenerators ∷ [RewriteGenerator]
+fullLeadInAndReportingRewriteGenerators =
+  [ altogetherAdverbDropCandidates
+  , embeddedQuoteDropCandidates
+  , parentheticalDropCandidates
+  , notOnlyButAlsoCandidates
+  , inPossessingTailCandidates
+  , betterArmedComparativeCandidates
+  , populationExistentialCandidates
+  , numericRangeLeadInCandidates
+  , progressiveEverCandidates
+  , coordinatingLeadInCandidates
+  , letUsImperativeCandidates
+  , letPronounImperativeCandidates
+  , beItParentheticalCandidates
+  , downFrontingCandidates
+  , descriptiveCommaTailCandidates
+  , demonstrativeSubjectCandidates
+  , towardsPrepCandidates
+  , uponPrepCandidates
+  , perfectComeCandidates
+  , amongWhichCoreCandidates
+  , amongWhichTailCandidates
+  , trailingThatAreCandidates
+  , superlativeCoordToManyCandidates
+  , amongLeadInCandidates
+  , comparativeAsLeadInCandidates
+  , ofSizeCopulaCandidates
+  , forLeadInCandidates
+  , forFiniteClauseTailCandidates
+  , forExistentialTailCandidates
+  , reportingLeadInCandidates
+  , stackedLeadInCandidates
+  , frontedPackagingLeadInCandidates
+  , predicativeThoughtLeadInCandidates
+  , speechTagInversionCandidates
+  , quotedAttributionParentheticalCandidates
+  , quotedClauseAfterAttributionCandidates
+  , periodClauseTailCandidates
+  , reportedThatClauseCandidates
+  , reportingThatClauseCandidates
+  , relatedThatClauseCandidates
+  , subjectItselfDropCandidates
+  , reflexiveObjectCandidates
+  , reflexiveSubjectCandidates
+  , windLeadInTailCandidates
+  , calledNameTailCandidates
+  , colloquialAppositiveTailCandidates
+  , parentheticalWhenClauseCandidates
+  , inOrderInfinitiveParentheticalCandidates
+  , thoughClauseParentheticalCandidates
+  , postWhenClauseCandidates
+  , temporalLeadInCandidates
+  , stackedPrepositionalLeadInCandidates
+  , sometimesLeadInCandidates
+  , emotionalWithLeadInCandidates
+  , annoYearTailCandidates
+  , inPossessiveWayLeadInCandidates
+  ]
+
+fullAdverbAndTailRewriteGenerators ∷ [RewriteGenerator]
+fullAdverbAndTailRewriteGenerators =
+  [ alsoAdverbDropCandidates
+  , veryLikeFragmentCandidates
+  , likeAsClauseCoreCandidates
+  , insomuchThatTailCandidates
+  , exceedingDegreeCandidates
+  , thrownOutOfCandidates
+  , atAStrokeCandidates
+  , amountedMeasureCandidates
+  , extractedOutOfCandidates
+  , whereasClauseCoreCandidates
+  , whereasLeadInCandidates
+  , whetherParentheticalCandidates
+  , whetherClauseTailTrimCandidates
+  , ifNotComparativeParentheticalCandidates
+  , commaSubjectTailTrimCandidates
+  , commaMainClauseAfterFragmentCandidates
+  , subjectCommaBeforeFiniteVerbCandidates
+  , andWithPhraseTailCandidates
+  , withPhraseTailCandidates
+  , andSometimesTailTrimCandidates
+  , enterIntoCandidates
+  , swallowedUpCandidates
+  , immediateAdverbDropCandidates
+  , catalogueAnaphoraCandidates
+  , copulaLyAdverbDropCandidates
+  , allOverWithCandidates
+  , arrayOfCandidates
+  , resemblingTailCandidates
+  , foundImbeddedCandidates
+  , travelledFoundCoreCandidates
+  , doubtlessAdverbDropCandidates
+  , frequentlyAdverbDropCandidates
+  , attendedWithSmellCandidates
+  , seldomAdverbDropCandidates
+  , onceAdverbDropCandidates
+  , justlyAdverbDropCandidates
+  , suchDeterminerCandidates
+  , allTheOtherDropCandidates
+  , withoutGerundAdjunctCandidates
+  , withoutNounAdjunctCandidates
+  , asIfTailTrimCandidates
+  , butClauseCoreCandidates
+  , appearanceCopulaCandidates
+  , provedCopulaCandidates
+  , butThatIsTailCandidates
+  , toSeeWhetherClauseCandidates
+  , toTryWhetherClauseCandidates
+  , frontedToPhraseLeadInCandidates
+  , topicalizedPronounClauseCandidates
+  , standInDreadCandidates
+  , forFearTailCandidates
+  , suchIsTailCandidates
+  , thatClauseCoreCandidates
+  , becauseClauseCoreCandidates
+  , ifClauseCoreCandidates
+  , thanPronounTailCandidates
+  , sinceClauseTailCandidates
+  , frontedWhatIsLeadInCandidates
+  , describedByTailCandidates
+  , ofWhoseCoreCandidates
+  , ofWhichTailCandidates
+  , descriptiveOfWhichTailCandidates
+  , onBoardOfWhichParentheticalCandidates
+  , onBoardOfWhichTailCandidates
+  , goneBeforeRelativeCandidates
+  , clearingOutCandidates
+  , andMakingTailTrimCandidates
+  , omittedSubjectAndTailCandidates
+  , againstTailTrimCandidates
+  ]
+
+fullArchaicAndRelativeRewriteGenerators ∷ [RewriteGenerator]
+fullArchaicAndRelativeRewriteGenerators =
+  [ optativeWouldThatCandidates
+  , clearOutPhrasalCandidates
+  , signalOutEveryTimeCandidates
+  , archaicPronounCandidates
+  , archaicSecondPersonVerbCandidates
+  , eyeDialectContractionCandidates
+  , forEverCandidates
+  , comparativeCorrelativeCandidates
+  , byPrepPassiveInversionCandidates
+  , frontedLieInfinitiveCandidates
+  , frontedAdverbInversionCandidates
+  , frontedPredicateCopulaInversionCandidates
+  , didKillInversionCandidates
+  , invertedAuxClauseCandidates
+  , subjectThatVerbCandidates
+  , causativeToInfinitiveCandidates
+  , goPredicateCandidates
+  , locativeRelativeTailCandidates
+  , restrictiveRelativeTailCandidates
+  , packagedRelativeTailCandidates
+  , whereMainClauseCandidates
+  , whichCommaTailTrimCandidates
+  , shortCopularRelativeTailCandidates
+  ]
+
+fullCopulaDiscourseAndQuestionRewriteGenerators ∷ [RewriteGenerator]
+fullCopulaDiscourseAndQuestionRewriteGenerators =
+  [ createdHugestSwimCandidates
+  , raiseUpImperativeCandidates
+  , imperativeGiveItUpCandidates
+  , namedCallImperativeCandidates
+  , letUsCoordinatedTailCandidates
+  , imperativeLeadTrimCandidates
+  , packagedImperativeTailCandidates
+  , valedictionImperativeCandidates
+  , whoseTailTrimCandidates
+  , touchingLeadInCandidates
+  , asWellAsLeadInCandidates
+  , copulaAdjectiveSimplificationCandidates
+  , copulaMeasurePredicateCandidates
+  , copulaSuperlativeNominalCandidates
+  , copulaAnimalToGenericAdjCandidates
+  , copulaPortionOfCandidates
+  , propertyPredicateCandidates
+  , ellipticCopulaNominalCandidates
+  , copulaNominalToAdjectiveCandidates
+  , copularAppositiveTailCandidates
+  , thingOnEarthCopulaCandidates
+  , thingCopulaToGenericAdjCandidates
+  , copulaComplementProperNounCandidates
+  , asAffordingTailCandidates
+  , hasBeenParticipleListCandidates
+  , asToPurposeTailCandidates
+  , evidentialLeadInCandidates
+  , discourseLeadInCandidates
+  , yetMainClauseCandidates
+  , politeWhQuestionLeadInCandidates
+  , vocativeLeadInCandidates
+  , whMatterQuestionCandidates
+  , therePronounPredicateCandidates
+  , therePointingCopulaCandidates
+  , demonstrativePrepObjectCandidates
+  , subjectLyAdverbCandidates
+  , reportingParentheticalCandidates
+  , questionCoreAfterAsidesCandidates
+  , commaParentheticalCandidates
+  , contrastiveHereThereTailCandidates
+  , aggressiveClauseCoreCandidates
+  , bySettingUpTailCandidates
+  , etymologyGlossTailCandidates
+  , appositiveOfChainCandidates
+  , predicateTailTrimCandidates
+  , dashClauseTailCandidates
+  , trailingThereDropCandidates
+  ]
+
+fullLateLiteraryRewriteGenerators ∷ [RewriteGenerator]
+fullLateLiteraryRewriteGenerators =
+  [ tillClauseTailCandidates
+  , notTillThatClauseCandidates
+  , modalInterposedInPhraseCandidates
+  , locativeAppearsClauseCandidates
+  , andInGerundTailCandidates
+  , andGerundCommaTailCandidates
+  , andIntoAirTailCandidates
+  , andFiniteTailCandidates
+  , coordinatedClausePrefixCandidates
+  , byGerundTailTrimCandidates
+  , forCouldNeverTailCandidates
+  , trailingForPhraseCandidates
+  , memoryHavingTailCandidates
+  , fewEverReturnCandidates
+  , commaOneClauseTailCandidates
+  , betweenRangeTailCandidates
+  , purposeInfinitiveTailCandidates
+  , terminalInOrderTailCandidates
+  , emphaticItselfDropCandidates
+  , wouldNotRatherCandidates
+  , thoughtWouldTailCandidates
+  , accountHighTimeCandidates
+  , darwinObservationCandidates
+  , engagedInContrastCandidates
+  , pronominalAdverbCandidates
+  , whatsoeverDropCandidates
+  , atEasePredicateCandidates
+  , sameFeelingsWithMeCandidates
+  , rightAndLeftLeadInCandidates
+  , hereLeadInCandidates
+  , lookAtImperativeCandidates
+  , locativeDirectionCandidates
+  , nauticalWhereQuestionCandidates
+  , wherePassiveCoreCandidates
+  , commerceSurroundsTailCandidates
+  , standInversionCandidates
+  , whatDoTheyHereCandidates
+  , postSubjectAllCandidates
+  , hereComeCandidates
+  , attractThemThitherCandidates
+  , takeAnyPathCandidates
+  , leadYouToWaterCandidates
+  , tryExperimentCandidates
+  , everyOneKnowsLeadInCandidates
+  , copularPlaceAppositiveCandidates
+  , hereIsExistentialCandidates
+  , chiefElementQuestionCandidates
+  , frontedWindsCandidates
+  , scenicInversionChainCandidates
+  , unlessClauseCoreCandidates
+  , goVisitCandidates
+  , waterThereDropCandidates
+  , rhetoricalTravelQuestionCandidates
+  , crazyToGoToSeaCandidates
+  , mysticalVibrationCandidates
+  , seaHolyCandidates
+  , deityQuestionCandidates
+  , meaningPredicateCandidates
+  , purseNecessityCandidates
+  , neverPassengerCandidates
+  , asMuchAsICanDoCandidates
+  , speakRespectfullyCandidates
+  , seeMummiesCandidates
+  , orderMeCandidates
+  , unpleasantEnoughCandidates
+  , tallestBoysAweCandidates
+  , transitionKeenCandidates
+  , wearsOffCandidates
+  , seaCaptainOrdersCandidates
+  , obeyCandidates
+  , payingMeCandidates
+  , passengersMustPayCandidates
+  , differenceWorldCandidates
+  , actOfPayingCandidates
+  , receivesMoneyCandidates
+  , perditionCandidates
+  , tellMeThatCandidates
+  , alwaysGoToSeaCandidates
+  , commodoreAtmosphereCandidates
+  , commonaltyLeadCandidates
+  , fatesAnswerCandidates
+  , briefInterludeCandidates
+  , seeLittleCandidates
+  , greatWhaleIdeaCandidates
+  , perceiveHorrorCandidates
+  , reduplicativeModifierCandidates
+  , archaicVerbCandidates
+  , gothicArchCandidates
+  , laidOpenVerbCandidates
+  , laidOpenMainClauseCandidates
+  , passiveInfinitiveCandidates
+  , complexClauseNormalizationCandidates
+  , takeInHandCandidates
+  , andToInfinitiveCandidates
+  , byWhatNameCandidates
+  , byNameClauseTrimCandidates
+  , freeRelativeCandidates
+  , frontedSubordinateCandidates
+  , pruneLeavingParentheticalCandidates
+  , participialTailTrimCandidates
+  , amongParticipialTailCandidates
+  ]
 
 complexClauseNormalizationCandidates ∷ String → [String]
 complexClauseNormalizationCandidates text =

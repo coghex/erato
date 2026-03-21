@@ -2,6 +2,7 @@
 
 module Test.TokenizationHardening (spec) where
 
+import Parser.Translate (translateSentence)
 import Test.Hspec
 
 import Parser.AST
@@ -88,3 +89,50 @@ spec grammars = describe "Tokenization hardening" $ do
           (CommonNoun (Just "the") [] "whale" Singular Nothing)
           (CopulaNP (CommonNoun (Just "a") [] "king" Singular Nothing)))
         (LexicalAdv "oh")
+
+  it "parses a leading NP fragment before a clause" $ do
+    let exprs = parseControlled grammars "The pale usher; I see him now."
+    shouldParse exprs
+    exprs `shouldParseAs`
+      SentenceWithLeadNP
+        (CommonNoun (Just "the") ["pale"] "usher" Singular Nothing)
+        (Sentence Present Positive
+          (Pronoun First Singular Subjective)
+          (VPWithAdv
+            (Transitive "see" (Pronoun Third Singular Objective))
+            (LexicalAdv "now")))
+
+  it "parses the exact corpus usher sentence with punctuation and coordinated in-phrase" $ do
+    let exprs = parseControlled grammars "The pale Usher—threadbare in coat, heart, body, and brain; I see him now."
+        organs =
+          CoordNP And
+            (CommonNoun Nothing [] "coat" Singular Nothing)
+            (CoordNP And
+              (CommonNoun Nothing [] "heart" Singular Nothing)
+              (CoordNP And
+                (CommonNoun Nothing [] "body" Singular Nothing)
+                (CommonNoun Nothing [] "brain" Singular Nothing)))
+    shouldParse exprs
+    exprs `shouldParseAs`
+      SentenceWithLeadNP
+        (CommonNoun (Just "the") ["pale"] "usher" Singular
+          (Just
+            (RelChain
+              (PostAdj (BareAdj "threadbare"))
+              (RelPrep "in" organs))))
+        (Sentence Present Positive
+          (Pronoun First Singular Subjective)
+          (VPWithAdv
+            (Transitive "see" (Pronoun Third Singular Objective))
+            (LexicalAdv "now")))
+
+  it "falls back to a standalone heading word without requiring grammar coverage" $ do
+    parsePreferredControlledSentence grammars "ETYMOLOGY"
+      `shouldBe` Nothing
+    parsePreferredFallbackSentence grammars "ETYMOLOGY"
+      `shouldBe` Just (SingleWord "ETYMOLOGY")
+
+  it "renders the standalone fallback word faithfully after token cleanup" $ do
+    let parsed = parsePreferredFallbackSentence grammars "\"ETYMOLOGY.\""
+    parsed `shouldBe` Just (SingleWord "ETYMOLOGY")
+    fmap translateSentence parsed `shouldBe` Just "ETYMOLOGY"

@@ -18,7 +18,11 @@ nouns:
     plural: vaticans
   - lemma: cetology
     plural: cetologies
+  - lemma: lexicon
+    plural: lexicons
   - lemma: might
+  - lemma: harpooneer
+    plural: harpooneers
 
 verbs:
   - lemma: fare

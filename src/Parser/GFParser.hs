@@ -11,12 +11,11 @@ module Parser.GFParser
   , parsePreferredFallbackSentence
   ) where
 
-import Data.Char (isAlpha, isAlphaNum, isUpper, toLower, toUpper)
-import Data.List (isInfixOf, isPrefixOf, isSuffixOf, minimumBy)
-import Data.Maybe (mapMaybe)
-import Data.Ord (comparing)
+import Data.Char (isAlpha, isAlphaNum, isSpace, isUpper, toLower, toUpper)
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf)
+import Data.Maybe (mapMaybe, maybeToList)
 import PGF
-import Parser.AST (AdjPhrase(..), AdvPhrase(..), NounPhrase(..), Number(..), QuestionWord(..), RelClause(..), Sentence(..), VerbPhrase(..), WhClause(..))
+import Parser.AST (AdjPhrase(..), AdvPhrase(..), Conj(..), NounPhrase(..), Number(..), Person(..), Polarity(..), PronounCase(..), QuestionWord(..), RelClause(..), Sentence(..), Tense(..), VerbPhrase(..), WhClause(..))
 import Parser.Translate (exprToSentence, validateExpr)
 
 data GrammarBundle = GrammarBundle
@@ -41,6 +40,11 @@ data SentenceMetrics = SentenceMetrics
   , metricBareNounPenalty     ∷ Int
   }
 
+data PreferredSelection a = PreferredSelection
+  { preferredAnyParse        ∷ Maybe (ParsedParse a)
+  , preferredPossessiveParse ∷ Maybe (ParsedParse a)
+  }
+
 loadGrammars ∷ FilePath → FilePath → IO GrammarBundle
 loadGrammars controlledPath fallbackPath = do
   c <- readPGF controlledPath
@@ -62,11 +66,13 @@ parseControlledSentences bundle input =
 
 parsePreferredControlledSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredControlledSentence bundle input =
-  fmap parsedSentence (preferParsedParse (parseControlledResults bundle input))
+  case directLeadNPSentence bundle input of
+    Just sentence -> Just sentence
+    Nothing -> fmap parsedSentence (parsePreferredControlledResult bundle input)
 
 parseFallbackAllEng ∷ GrammarBundle → String → [Expr]
 parseFallbackAllEng bundle input =
-  map parsedValue (parseFallbackResults bundle input)
+  map parsedValue (parseFallbackExprResults bundle input)
 
 parseFallbackSentences ∷ GrammarBundle → String → [Sentence]
 parseFallbackSentences bundle input =
@@ -74,27 +80,68 @@ parseFallbackSentences bundle input =
 
 parsePreferredFallbackSentence ∷ GrammarBundle → String → Maybe Sentence
 parsePreferredFallbackSentence bundle input =
-  fmap parsedSentence (preferParsedParse (parseFallbackResults bundle input))
+  case parsePreferredFallbackExprResult bundle input of
+    Just parsed -> Just (parsedSentence parsed)
+    Nothing -> fmap parsedSentence (singleWordFallbackParse bundle input)
 
 data NormalizedInput = NormalizedInput
   { normalizedInput        ∷ String
   , possessiveMarkerCount ∷ Int
   }
 
-parseControlledResults ∷ GrammarBundle → String → [ParsedParse Expr]
-parseControlledResults bundle input =
+type TextRewrite = String → String
+
+parsePreferredControlledResult ∷ GrammarBundle → String → Maybe (ParsedParse Expr)
+parsePreferredControlledResult bundle input =
   let pgf                = controlledPgf bundle
       lang               = controlledLang bundle
       morpho             = controlledMorpho bundle
       typ                = startCat pgf
       preparedInputs     = prepareParseInputs morpho input
       normalized         = primaryNormalizedInput input preparedInputs
-      parses             = concatMap (\(_, text) → parse pgf lang typ text) preparedInputs
-      validParses        = mapMaybe (validatedParse morpho) parses
-  in filterPossessiveParses normalized validParses
+      desiredPossessives = preferredPossessiveCount normalized
+  in selectPreferredPreparedInputParse
+       desiredPossessives
+       preparedInputs
+       (\text -> [parse pgf lang typ text])
+       (validatedParse morpho)
 
-parseFallbackResults ∷ GrammarBundle → String → [ParsedParse Expr]
-parseFallbackResults bundle input =
+parsePreferredFallbackExprResult ∷ GrammarBundle → String → Maybe (ParsedParse Expr)
+parsePreferredFallbackExprResult bundle input =
+  let pgf                = fallbackPgf bundle
+      mLang              = fallbackLang bundle
+      morpho             = controlledMorpho bundle
+      typ                = startCat pgf
+      preparedInputs     = prepareParseInputs morpho input
+      normalized         = primaryNormalizedInput input preparedInputs
+      desiredPossessives = preferredPossessiveCount normalized
+      parseBatches text =
+        case mLang of
+          Just lang -> [parse pgf lang typ text]
+          Nothing -> parseAll pgf typ text
+  in selectPreferredPreparedInputParse
+       desiredPossessives
+       preparedInputs
+       parseBatches
+       fallbackParsedParse
+
+parseControlledResults ∷ GrammarBundle → String → [ParsedParse Expr]
+parseControlledResults bundle input =
+  case directLeadNPUttResult bundle input of
+    Just parsed -> [parsed]
+    Nothing ->
+      let pgf                = controlledPgf bundle
+          lang               = controlledLang bundle
+          morpho             = controlledMorpho bundle
+          typ                = startCat pgf
+          preparedInputs     = prepareParseInputs morpho input
+          normalized         = primaryNormalizedInput input preparedInputs
+          parses             = concatMap (\(_, text) → parse pgf lang typ text) preparedInputs
+          validParses        = mapMaybe (validatedParse morpho) parses
+      in filterPossessiveParses normalized validParses
+
+parseFallbackExprResults ∷ GrammarBundle → String → [ParsedParse Expr]
+parseFallbackExprResults bundle input =
   let pgf                = fallbackPgf bundle
       mLang              = fallbackLang bundle
       morpho             = controlledMorpho bundle
@@ -110,27 +157,75 @@ parseFallbackResults bundle input =
       parsedSentences    = mapMaybe fallbackParsedParse parses
   in filterPossessiveParses normalized parsedSentences
 
+parseFallbackResults ∷ GrammarBundle → String → [ParsedParse Sentence]
+parseFallbackResults bundle input =
+  let exprParses = parseFallbackExprResults bundle input
+  in if null exprParses
+       then maybeToList (singleWordFallbackParse bundle input)
+       else map parsedSentenceResult exprParses
+
+parsedSentenceResult ∷ ParsedParse a → ParsedParse Sentence
+parsedSentenceResult parsed =
+  ParsedParse
+    { parsedSentence = parsedSentence parsed
+    , parsedValue = parsedSentence parsed
+    , parsedMetrics = parsedMetrics parsed
+    }
+
+singleWordFallbackParse ∷ GrammarBundle → String → Maybe (ParsedParse Sentence)
+singleWordFallbackParse bundle input =
+  let morpho = controlledMorpho bundle
+      preparedInputs = prepareParseInputs morpho input
+      candidates =
+        [ token
+        | (normalized, _) <- preparedInputs
+        , [token] <- [words (normalizedInput normalized)]
+        ]
+  in case candidates of
+       word : _ -> Just (makeParsedParse (SingleWord word) (SingleWord word))
+       []       -> Nothing
+
 prepareParseInputs ∷ Morpho → String → [(NormalizedInput, String)]
 prepareParseInputs morpho input =
-  let tokenized = tokenizeInput input
-      rewritten0 = rewriteParseInput morpho tokenized
-      rewritten1 = rewriteParseInput morpho (normalizeKnownTokenCase morpho tokenized)
+  let tokenizedInputs =
+        tokenizeInputVariants input
+          ++ extraNormalizedTokenizeInputs input
       rewrittenInputs =
-        uniqueStrings
-          (prioritizedRewriteVariants rewritten0 ++ prioritizedRewriteVariants rewritten1)
-  in map (finalizeParseInput morpho) rewrittenInputs
+        concatMap (prepareTokenizedParseInputs morpho) (uniqueStrings tokenizedInputs)
+  in map (finalizeParseInput morpho) (uniqueStrings rewrittenInputs)
+
+extraNormalizedTokenizeInputs ∷ String → [String]
+extraNormalizedTokenizeInputs input =
+  let normalized = normalizeSerialCommaLists input
+  in if normalized == input
+       then []
+       else tokenizeInputVariants normalized
+
+prepareTokenizedParseInputs ∷ Morpho → String → [String]
+prepareTokenizedParseInputs morpho tokenizedInput =
+  concatMap
+    (prioritizedRewriteVariants . rewriteParseInput morpho)
+    [ tokenizedInput
+    , normalizeKnownTokenCase morpho tokenizedInput
+    ]
 
 rewriteParseInput ∷ Morpho → String → String
 rewriteParseInput morpho =
-  normalizeSentenceInitialPronoun
-    . normalizeSentenceInitialBut
-    . normalizeArchaicEnglish morpho
-    . normalizeLiteraryNames
-    . normalizeDegreeModifiers
-    . normalizeComparativeCorrelatives
-    . normalizeObjectComparativeWh
-    . normalizeQuestionNegationOrder
-    . normalizeContractions
+  applyTextRewrites
+    [ normalizeContractions
+    , normalizeQuestionNegationOrder
+    , normalizeObjectComparativeWh
+    , normalizeComparativeCorrelatives
+    , normalizeDegreeModifiers
+    , normalizeLiteraryNames
+    , normalizeArchaicEnglish morpho
+    , normalizeSentenceInitialBut
+    , normalizeSentenceInitialPronoun
+    ]
+
+applyTextRewrites ∷ [TextRewrite] → TextRewrite
+applyTextRewrites rewrites input =
+  foldl' (\rewritten rewrite → rewrite rewritten) input rewrites
 
 strippedAsAffordingTail ∷ String → String
 strippedAsAffordingTail input =
@@ -175,7 +270,7 @@ splitBeforeAsAffording =
   where
     go _ [] = Nothing
     go _ [_] = Nothing
-    go acc rest@(first : second : tailTokens)
+    go acc (first : second : tailTokens)
       | map toLower first == "as"
       , map toLower second == "affording" =
           Just (reverse acc)
@@ -363,17 +458,301 @@ makeParsedParse sentence value =
     , parsedMetrics = sentenceMetrics sentence
     }
 
-tokenizeInput ∷ String → String
-tokenizeInput input =
-  let roughTokens = words (map normalizeTokenChar input)
+tokenizeInputVariants ∷ String → [String]
+tokenizeInputVariants input =
+  uniqueStrings
+    [ tokenizeInput True input
+    , tokenizeInput False input
+    ]
+
+tokenizeInput ∷ Bool → String → String
+tokenizeInput preserveCommas input =
+  let roughTokens = words (concatMap (normalizeTokenChars preserveCommas) input)
       cleanedTokens = map cleanToken roughTokens
   in unwords (filter (not . null) cleanedTokens)
 
-normalizeTokenChar ∷ Char → Char
-normalizeTokenChar c
+normalizeTokenChars ∷ Bool → Char → String
+normalizeTokenChars preserveCommas c
+  | c == '’' = "'"
+  | preserveCommas && c == ',' = " , "
+  | preserveCommas && c == ';' = " ; "
+  | isAlphaNum c || c == '\'' || c == '-' = [c]
+  | otherwise = " "
+
+directLeadNPSentence ∷ GrammarBundle → String → Maybe Sentence
+directLeadNPSentence bundle input = do
+  (leadText, uttText) <- splitSingleLeadSemicolon input
+  lead <- parseLeadNPSurface (controlledMorpho bundle) leadText
+  sentence <- parsePreferredControlledSentence bundle uttText
+  pure (SentenceWithLeadNP lead sentence)
+
+directLeadNPUttResult ∷ GrammarBundle → String → Maybe (ParsedParse Expr)
+directLeadNPUttResult bundle input = do
+  sentence <- directLeadNPSentence bundle input
+  expr <- exprFromSupportedSentence sentence
+  pure (makeParsedParse sentence expr)
+
+splitSingleLeadSemicolon ∷ String → Maybe (String, String)
+splitSingleLeadSemicolon input =
+  case break (== ';') input of
+    (left, ';' : right)
+      | ';' `notElem` right
+      , not (null (trimWhitespace left))
+      , not (null (trimWhitespace right)) ->
+          Just (trimWhitespace left, trimWhitespace right)
+    _ ->
+      Nothing
+
+trimWhitespace ∷ String → String
+trimWhitespace =
+  reverse . dropWhile isSpace . reverse . dropWhile isSpace
+
+parseLeadNPSurface ∷ Morpho → String → Maybe NounPhrase
+parseLeadNPSurface morpho input = do
+  let normalized = normalizeKnownTokenCase morpho (normalizeLeadSurface input)
+      tokens = words normalized
+      (coreTokens, rel) =
+        case break (== "in") tokens of
+          (before, "in" : after) ->
+            (before, Just (RelPrep "in" <$> parseLeadList after))
+          _ ->
+            (tokens, Nothing)
+  (detToken, contentTokens) <- splitLeadDeterminer coreTokens
+  let (nounTokens, postAdj) =
+        case rel of
+          Just _ | length contentTokens >= 2 ->
+            (init contentTokens, Just (last contentTokens))
+          _ ->
+            (contentTokens, Nothing)
+  headNoun <- lastMaybe nounTokens
+  let adjectives = map stripTrailingComma (init nounTokens)
+      relClause =
+        case (postAdj, rel) of
+          (Just adj, Just (Just prepRel)) ->
+            Just (RelChain (PostAdj (BareAdj (stripTrailingComma adj))) prepRel)
+          (Just adj, _) ->
+            Just (PostAdj (BareAdj (stripTrailingComma adj)))
+          (_, Just prepRel) ->
+            prepRel
+          _ ->
+            Nothing
+  pure
+    (CommonNoun
+      (Just detToken)
+      adjectives
+      (stripTrailingComma headNoun)
+      Singular
+      relClause)
+
+splitLeadDeterminer ∷ [String] → Maybe (String, [String])
+splitLeadDeterminer (detToken : rest)
+  | detToken `elem` ["the", "a", "an", "this", "that", "these", "those"]
+  , not (null rest) =
+      Just (detToken, rest)
+splitLeadDeterminer _ =
+  Nothing
+
+parseLeadList ∷ [String] → Maybe NounPhrase
+parseLeadList tokens =
+  coordList (map mkNoun cleaned)
+  where
+    cleaned =
+      [ stripTrailingComma token
+      | token <- tokens
+      , token /= "and"
+      , not (null (stripTrailingComma token))
+      ]
+    mkNoun nounToken =
+      CommonNoun Nothing [] nounToken Singular Nothing
+
+coordList ∷ [NounPhrase] → Maybe NounPhrase
+coordList [] = Nothing
+coordList [np] = Just np
+coordList (np : rest) =
+  CoordNP And np <$> coordList rest
+
+normalizeLeadSurface ∷ String → String
+normalizeLeadSurface =
+  trimWhitespace . unwords . words . map normalizeLeadChar
+
+normalizeLeadChar ∷ Char → Char
+normalizeLeadChar c
   | c == '’' = '\''
-  | isAlphaNum c || c == '\'' || c == '-' = c
-  | otherwise = ' '
+  | c == '—' || c == '–' = ' '
+  | otherwise = c
+
+stripTrailingComma ∷ String → String
+stripTrailingComma = reverse . dropWhile (== ',') . reverse
+
+lastMaybe ∷ [a] → Maybe a
+lastMaybe [] = Nothing
+lastMaybe [item] = Just item
+lastMaybe (_ : rest) = lastMaybe rest
+
+exprFromSupportedSentence ∷ Sentence → Maybe Expr
+exprFromSupportedSentence (SentenceWithLeadNP np sentence) =
+  mkExpr "LeadNPUtt"
+    [ exprFromSupportedNP np
+    , mkExpr "UttS" [exprFromSupportedSentence sentence]
+    ]
+exprFromSupportedSentence (Sentence tense polarity subject verb) =
+  mkExpr "MkS"
+    [ exprFromTense tense
+    , exprFromPolarity polarity
+    , mkExpr "Pred"
+        [ exprFromSupportedNP subject
+        , exprFromSupportedVP verb
+        ]
+    ]
+exprFromSupportedSentence _ =
+  Nothing
+
+exprFromSupportedNP ∷ NounPhrase → Maybe Expr
+exprFromSupportedNP (CommonNoun detToken adjs nounStem Singular relClause) = do
+  nounExpr <- exprFromCommonNoun adjs nounStem relClause
+  case detToken of
+    Just detExprName ->
+      mkExpr "DetCN" [exprFromDet detExprName, pure nounExpr]
+    Nothing ->
+      mkExpr "UseN" [pure nounExpr]
+exprFromSupportedNP (Pronoun person number pronounCase) =
+  mkExpr "UsePron" [exprFromPronoun person number pronounCase]
+exprFromSupportedNP (CoordNP And left right) =
+  mkExpr "ConjNP"
+    [ pure (mkLeaf "and_Conj")
+    , exprFromSupportedNP left
+    , exprFromSupportedNP right
+    ]
+exprFromSupportedNP _ =
+  Nothing
+
+exprFromCommonNoun ∷ [String] → String → Maybe RelClause → Maybe Expr
+exprFromCommonNoun adjs nounStem relClause = do
+  base <- pure (mkLeaf (encodeLexemeStem nounStem <> "_N"))
+  prenominal <- foldr
+    (\adjStem acc -> mkExpr "AdjCN" [pure (mkLeaf (encodeLexemeStem adjStem <> "_A")), acc])
+    (Just base)
+    adjs
+  case relClause of
+    Nothing ->
+      pure prenominal
+    Just rel' ->
+      applyRelClause prenominal rel'
+
+applyRelClause ∷ Expr → RelClause → Maybe Expr
+applyRelClause nounExpr (PostAdj (BareAdj adjStem)) =
+  mkExpr "AdjPCN"
+    [ mkExpr "PostPositA" [pure (mkLeaf (encodeLexemeStem adjStem <> "_A"))]
+    , pure nounExpr
+    ]
+applyRelClause nounExpr (RelPrep prepStem np) =
+  mkExpr "PrepCN"
+    [ pure nounExpr
+    , pure (mkLeaf (encodeLexemeStem prepStem <> "_Prep"))
+    , exprFromSupportedNP np
+    ]
+applyRelClause nounExpr (RelChain left right) = do
+  leftExpr <- applyRelClause nounExpr left
+  applyRelClause leftExpr right
+applyRelClause _ _ =
+  Nothing
+
+exprFromSupportedVP ∷ VerbPhrase → Maybe Expr
+exprFromSupportedVP (Transitive lemma obj) =
+  mkExpr "UseV2"
+    [ pure (mkLeaf (encodeLexemeStem lemma <> "_V2"))
+    , exprFromSupportedNP obj
+    ]
+exprFromSupportedVP (Intransitive lemma) =
+  mkExpr "UseV" [pure (mkLeaf (encodeLexemeStem lemma <> "_V"))]
+exprFromSupportedVP (VPWithAdv verb adv) =
+  mkExpr "AdvVP"
+    [ exprFromSupportedVP verb
+    , exprFromSupportedAdv adv
+    ]
+exprFromSupportedVP _ =
+  Nothing
+
+exprFromSupportedAdv ∷ AdvPhrase → Maybe Expr
+exprFromSupportedAdv (LexicalAdv stem) =
+  pure (mkLeaf (encodeLexemeStem stem <> "_Adv"))
+exprFromSupportedAdv _ =
+  Nothing
+
+exprFromTense ∷ Tense → Maybe Expr
+exprFromTense Present = pure (mkLeaf "TPres")
+exprFromTense Past = pure (mkLeaf "TPast")
+exprFromTense Future = pure (mkLeaf "TFut")
+exprFromTense Conditional = pure (mkLeaf "TCond")
+exprFromTense Perfect = pure (mkLeaf "TPerf")
+
+exprFromPolarity ∷ Polarity → Maybe Expr
+exprFromPolarity Positive = pure (mkLeaf "PPos")
+exprFromPolarity Negative = pure (mkLeaf "PNeg")
+
+exprFromDet ∷ String → Maybe Expr
+exprFromDet "the" = pure (mkLeaf "the_Det")
+exprFromDet "a" = pure (mkLeaf "a_Det")
+exprFromDet "this" = pure (mkLeaf "this_Det")
+exprFromDet "that" = pure (mkLeaf "that_Det")
+exprFromDet "these" = pure (mkLeaf "these_Det")
+exprFromDet "those" = pure (mkLeaf "those_Det")
+exprFromDet _ = Nothing
+
+exprFromPronoun ∷ Person → Number → PronounCase → Maybe Expr
+exprFromPronoun First Singular _ = pure (mkLeaf "i_Pron")
+exprFromPronoun First Plural _ = pure (mkLeaf "we_Pron")
+exprFromPronoun Second Singular Objective = pure (mkLeaf "thee_Pron")
+exprFromPronoun Second Singular _ = pure (mkLeaf "you_Pron")
+exprFromPronoun Second Plural _ = pure (mkLeaf "youPl_Pron")
+exprFromPronoun Third Singular Subjective = pure (mkLeaf "he_Pron")
+exprFromPronoun Third Singular Objective = pure (mkLeaf "he_Pron")
+exprFromPronoun Third Plural Subjective = pure (mkLeaf "they_Pron")
+exprFromPronoun Third Plural Objective = pure (mkLeaf "they_Pron")
+
+mkExpr ∷ String → [Maybe Expr] → Maybe Expr
+mkExpr funName args =
+  mkApp (mkCId funName) <$> sequence args
+
+mkLeaf ∷ String → Expr
+mkLeaf funName = mkApp (mkCId funName) []
+
+encodeLexemeStem ∷ String → String
+encodeLexemeStem =
+  concatMap encodeChar
+  where
+    encodeChar '-' = "_H_"
+    encodeChar '\'' = "_A_"
+    encodeChar c = [toLower c]
+
+normalizeSerialCommaLists ∷ String → String
+normalizeSerialCommaLists =
+  unwords . rewriteSerialCommaTokens . words . concatMap normalizeSerialCommaChar
+
+normalizeSerialCommaChar ∷ Char → String
+normalizeSerialCommaChar c
+  | c == ',' = " , "
+  | c == ';' = " ; "
+  | otherwise = [c]
+
+rewriteSerialCommaTokens ∷ [String] → [String]
+rewriteSerialCommaTokens (a : "," : b : "," : c : "," : "and" : d : rest)
+  | all isSerialListItem [a, b, c, d] =
+      a : "and" : b : "and" : c : "and" : d : rewriteSerialCommaTokens rest
+rewriteSerialCommaTokens (a : "," : b : "," : "and" : c : rest)
+  | all isSerialListItem [a, b, c] =
+      a : "and" : b : "and" : c : rewriteSerialCommaTokens rest
+rewriteSerialCommaTokens (token : rest) =
+  token : rewriteSerialCommaTokens rest
+rewriteSerialCommaTokens [] = []
+
+isSerialListItem ∷ String → Bool
+isSerialListItem token =
+  not (null token) && all isSerialTokenChar token
+
+isSerialTokenChar ∷ Char → Bool
+isSerialTokenChar c =
+  isAlphaNum c || c == '\'' || c == '-'
 
 normalizeKnownTokenCase ∷ Morpho → String → String
 normalizeKnownTokenCase morpho =
@@ -759,6 +1138,75 @@ filterPossessiveParses normalized parses
               parses
       in if null matching then parses else matching
 
+preferredPossessiveCount ∷ NormalizedInput → Maybe Int
+preferredPossessiveCount normalized
+  | possessiveMarkerCount normalized > 0 =
+      Just (possessiveMarkerCount normalized)
+  | otherwise =
+      Nothing
+
+emptyPreferredSelection ∷ PreferredSelection a
+emptyPreferredSelection =
+  PreferredSelection Nothing Nothing
+
+selectPreferredPreparedInputParse
+  ∷ Maybe Int
+  → [(NormalizedInput, String)]
+  → (String → [[Expr]])
+  → (Expr → Maybe (ParsedParse a))
+  → Maybe (ParsedParse a)
+selectPreferredPreparedInputParse desiredPossessives preparedInputs parseBatches toParsed =
+  finalizePreferredSelection desiredPossessives (consumePreparedInputs emptyPreferredSelection preparedInputs)
+  where
+    consumePreparedInputs selection [] = selection
+    consumePreparedInputs selection ((_, text) : rest) =
+      consumePreparedInputs (consumeParseBatchGroups selection (parseBatches text)) rest
+
+    consumeParseBatchGroups selection [] = selection
+    consumeParseBatchGroups selection (exprs : rest) =
+      consumeParseBatchGroups (consumeParseBatch selection exprs) rest
+
+    consumeParseBatch selection [] = selection
+    consumeParseBatch selection (expr : rest) =
+      let nextSelection =
+            case toParsed expr of
+              Just parsed -> recordPreferredParse desiredPossessives parsed selection
+              Nothing -> selection
+      in consumeParseBatch nextSelection rest
+
+recordPreferredParse ∷ Maybe Int → ParsedParse a → PreferredSelection a → PreferredSelection a
+recordPreferredParse desiredPossessives parsed selection =
+  selection
+    { preferredAnyParse =
+        chooseBetterParse parsed (preferredAnyParse selection)
+    , preferredPossessiveParse =
+        case desiredPossessives of
+          Just wanted
+            | metricPossessiveCount (parsedMetrics parsed) == wanted ->
+                chooseBetterParse parsed (preferredPossessiveParse selection)
+          _ ->
+            preferredPossessiveParse selection
+    }
+
+chooseBetterParse ∷ ParsedParse a → Maybe (ParsedParse a) → Maybe (ParsedParse a)
+chooseBetterParse candidate Nothing =
+  Just candidate
+chooseBetterParse candidate current@(Just best)
+  | metricsPenaltyTuple (parsedMetrics candidate) < metricsPenaltyTuple (parsedMetrics best) =
+      Just candidate
+  | otherwise =
+      current
+
+finalizePreferredSelection ∷ Maybe Int → PreferredSelection a → Maybe (ParsedParse a)
+finalizePreferredSelection desiredPossessives selection =
+  case desiredPossessives of
+    Just _ ->
+      case preferredPossessiveParse selection of
+        Just parsed -> Just parsed
+        Nothing -> preferredAnyParse selection
+    Nothing ->
+      preferredAnyParse selection
+
 validatedSentence ∷ Morpho → Expr → Maybe Sentence
 validatedSentence morpho expr =
   case validateExpr expr of
@@ -769,12 +1217,6 @@ validatedSentence morpho expr =
       -- avoids extra proper-noun parses for ordinary vocabulary.
       | all (\w → null (lookupMorpho morpho w)) pns → Just sentence
       | otherwise                                   → Nothing
-
-
-preferParsedParse ∷ [ParsedParse a] → Maybe (ParsedParse a)
-preferParsedParse [] = Nothing
-preferParsedParse parses =
-  Just (minimumBy (comparing (metricsPenaltyTuple . parsedMetrics)) parses)
 
 emptySentenceMetrics ∷ SentenceMetrics
 emptySentenceMetrics = SentenceMetrics 0 0 0 0 0
@@ -820,6 +1262,10 @@ metricsPenaltyTuple metrics =
 sentenceMetrics ∷ Sentence → SentenceMetrics
 sentenceMetrics (Sentence _ _ subj vp) =
   nounPhraseMetrics subj `plusSentenceMetrics` verbPhraseMetrics vp
+sentenceMetrics (SingleWord _) =
+  emptySentenceMetrics
+sentenceMetrics (SentenceWithLeadNP np sentence) =
+  nounPhraseMetrics np `plusSentenceMetrics` sentenceMetrics sentence
 sentenceMetrics (SentenceWithAdv sentence adv) =
   sentenceMetrics sentence `plusSentenceMetrics` advPhraseMetrics adv
 sentenceMetrics (Vocative sentence np) =
@@ -851,6 +1297,8 @@ whClauseMetrics (AdvWh _ subj vp) =
 nounPhraseMetrics ∷ NounPhrase → SentenceMetrics
 nounPhraseMetrics (ProperNoun _) = emptySentenceMetrics
 nounPhraseMetrics (Demonstrative _ _) = emptySentenceMetrics
+nounPhraseMetrics (AppositiveNP headNP appositiveNP) =
+  nounPhraseMetrics headNP `plusSentenceMetrics` nounPhraseMetrics appositiveNP
 nounPhraseMetrics (Pronoun _ _ _) = emptySentenceMetrics
 nounPhraseMetrics (CommonNoun detTxt adjs noun number relClause) =
   maybe emptySentenceMetrics relClauseMetrics relClause
@@ -939,6 +1387,8 @@ adjPhraseMetrics (BareAdj adj) =
 adjPhraseMetrics (ModifiedAdj modifier adj) =
   adjPhraseMetrics adj
     `plusSentenceMetrics` sentenceMetricsDelta 0 0 (functionWordPenalty modifier) 0 0
+adjPhraseMetrics (AdjWithAdv adj adv) =
+  adjPhraseMetrics adj `plusSentenceMetrics` advPhraseMetrics adv
 adjPhraseMetrics (CoordAdj _ a b) =
   adjPhraseMetrics a `plusSentenceMetrics` adjPhraseMetrics b
 

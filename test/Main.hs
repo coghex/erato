@@ -16,6 +16,7 @@ import qualified Test.Invalid as Invalid
 import qualified Test.ProperNouns as ProperNouns
 import qualified Test.Prepositions as Prepositions
 import qualified Test.RelativeClauses as RelativeClauses
+import qualified Test.CorpusRegression as CorpusRegression
 import qualified Test.Coordination as Coordination
 import qualified Test.Complements as Complements
 import qualified Test.Tense as Tense
@@ -49,6 +50,7 @@ main = do
       ProperNouns.spec g
       Prepositions.spec g
       RelativeClauses.spec g
+      CorpusRegression.spec g
       Coordination.spec g
       Complements.spec g
       Tense.spec g

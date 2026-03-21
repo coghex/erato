@@ -52,6 +52,18 @@ The runner reports:
 - unparsed rate,
 - first N non-parsed examples with file/line context.
 
+## Corpus regression pack
+
+The repository also keeps a small curated literary regression pack in `testtext/corpus_regression.tsv`. It is intended to catch regressions on representative real sentences without running a full corpus sweep.
+
+```bash
+cabal test erato-tests --test-options='--match "Corpus regression"'
+```
+
+The pack supports two expectations:
+- `controlled` sentences should still parse through the controlled grammar.
+- `parse` sentences must parse through either the controlled or fallback path.
+
 Useful speed controls:
 - `--max-sentences N` to cap how much text is processed,
 - `--stop-after-unparsed N` to bail out early once enough failures are seen.
@@ -60,6 +72,21 @@ Safety controls:
 - `--max-input-bytes N` refuses corpora above a byte limit before parsing begins. The default is `5242880` bytes and `0` disables the check.
 - `--max-sentence-chars N` rejects very long sentence candidates before they reach the parser. The default is `600` characters and `0` disables the check.
 - The `erato` and `erato-corpus` executables are linked with a default RTS heap cap of `2G`, so runaway sessions fail fast instead of consuming unbounded memory.
+
+### Memory regression check
+
+Use the lightweight regression script to run `erato-corpus` on a representative fixture and fail if GHC RTS maximum residency exceeds a threshold.
+
+```bash
+python3 scripts/check_memory_regression.py
+```
+
+Useful options:
+- `--threshold-mb N` to change the allowed maximum residency.
+- `--jobs N` to exercise bounded parallel corpus parsing.
+- `--skip-build` to reuse an already-built `erato-corpus`.
+
+The default fixture is `testtext/memory_regression.txt`.
 
 ## Generate Lexicon (from Kaikki/Wiktionary)
 

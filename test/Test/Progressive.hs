@@ -69,3 +69,30 @@ spec grammars = describe "Progressive aspect" $ do
   it "parses the corpus-shaped progressive breakup clause: the icebound stream of Time is breaking up" $ do
     let exprs = parseControlled grammars "the icebound stream of Time is breaking up"
     shouldParse exprs
+
+  it "parses corpus-shaped progressive with ever and lexicons" $ do
+    let exprs = parseControlled grammars "he was ever dusting his old lexicons"
+    shouldParse exprs
+    exprs `shouldParseAs`
+      Sentence Past Positive
+        (Pronoun Third Singular Subjective)
+        (Progressive
+          (VPWithAdv
+            (Transitive "dust"
+              (CommonNoun (Just "his") ["old"] "lexicon" Plural Nothing))
+            (LexicalAdv "ever")))
+
+  it "parses blocker #1 full sentence with embellished handkerchief PP intact" $ do
+    parsePreferredControlledSentence grammars
+      "He was ever dusting his old lexicons and grammars, with a queer handkerchief, mockingly embellished with all the gay flags of all the known nations of the world"
+      `shouldBe`
+        Just
+          (Sentence Past Positive
+            (Pronoun Third Singular Subjective)
+            (VPWithAdv
+              (Progressive
+                (Transitive "dust"
+                  (CoordNP And
+                    (CommonNoun (Just "his") ["old"] "lexicon" Plural Nothing)
+                    (CommonNoun Nothing [] "grammar" Plural Nothing))))
+              (LexicalAdv "ever")))
